@@ -95,7 +95,7 @@ export default new NativeFunction({
             rest: false
         },
     ],
-    async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWidth, multiline, wrap, lineOffset]) {
+    async execute (ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWidth, multiline, wrap, lineOffset]) {
         const canvas = canvasName
             ? ctx.canvasManager?.get(canvasName)
             : ctx.canvasManager?.lastCurrent;
