@@ -145,9 +145,41 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         return width;
     };
 
-    // Split text into lines if multiline/wrap is enabled
+    // Split text into lines
     let lines = [];
-    if ((multiline || wrap) && maxWidth) {
+    
+    if (multiline) {
+        // Se multiline for true, primeiro dividir por quebras de linha explícitas (\n)
+        const explicitLines = text.split('\n');
+        
+        for (const explicitLine of explicitLines) {
+            if (wrap && maxWidth) {
+                // Se wrap também estiver ativado, quebrar linhas longas
+                const words = explicitLine.split(' ');
+                let currentLine = '';
+                
+                for (const word of words) {
+                    const testLine = currentLine ? `${currentLine} ${word}` : word;
+                    const testWidth = measureMixedText(testLine);
+                    
+                    if (testWidth > maxWidth && currentLine) {
+                        lines.push(currentLine);
+                        currentLine = word;
+                    } else {
+                        currentLine = testLine;
+                    }
+                }
+                
+                if (currentLine) {
+                    lines.push(currentLine);
+                }
+            } else {
+                // Apenas adicionar a linha como está
+                lines.push(explicitLine);
+            }
+        }
+    } else if (wrap && maxWidth) {
+        // Apenas wrap sem multiline - quebrar por palavras
         const words = text.split(' ');
         let currentLine = '';
         
@@ -167,17 +199,14 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
             lines.push(currentLine);
         }
     } else {
+        // Sem multiline nem wrap - uma linha apenas
         lines = [text];
     }
 
-    // Draw each line
-    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-        const lineText = lines[lineIndex];
-        const lineY = y + (lineIndex * actualLineOffset);
-        let cursorX = x;
-
-        // Process each line for emojis and text
+    // Helper function to draw mixed text and emojis for a single line
+    const drawMixedLine = async (lineText, lineX, lineY) => {
         const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\uFE0F])/gu;
+        let cursorX = lineX;
         let lastIndex = 0;
         let match;
 
@@ -187,21 +216,17 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
             // Draw preceding text
             if (match.index > lastIndex) {
                 const segment = lineText.slice(lastIndex, match.index);
-                canvas.text(
-                    mode,
-                    segment,
-                    cursorX,
-                    lineY,
-                    font,
-                    maxWidth,
-                    false, // Don't use multiline for individual segments
-                    false, // Don't wrap individual segments
-                    0      // No line offset for segments
-                );
-                cursorX += canvas.ctx.measureText(segment).width;
+                if (segment) {
+                    if (mode === __1.FillOrStroke.fill) {
+                        canvas.ctx.fillText(segment, cursorX, lineY);
+                    } else {
+                        canvas.ctx.strokeText(segment, cursorX, lineY);
+                    }
+                    cursorX += canvas.ctx.measureText(segment).width;
+                }
             }
 
-            // Resolve emoji image URL
+            // Resolve and draw emoji
             let url;
             if (id) {
                 // Discord custom emoji
@@ -213,23 +238,26 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     .map(c => c.codePointAt(0).toString(16))
                     .join('-');
                 url = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${codepoint}.png`;
-            } else {
-                url = '';
             }
 
             if (url) {
-                // Draw emoji using canvas.drawImage
-                const img = await __1.CanvasUtil.resolveImage(this, ctx, url);
-                if (img instanceof forgescript_1.Return) return img;
-                
-                await canvas.drawImage(
-                    img,
-                    cursorX,
-                    lineY - size,
-                    size,
-                    size
-                );
-                cursorX += size;
+                try {
+                    const img = await __1.CanvasUtil.resolveImage(this, ctx, url);
+                    if (img instanceof forgescript_1.Return) return img;
+                    
+                    // Draw emoji aligned with text baseline
+                    canvas.ctx.drawImage(
+                        img,
+                        cursorX,
+                        lineY - size + (size * 0.2), // Adjust vertical position for better alignment
+                        size,
+                        size
+                    );
+                    cursorX += size;
+                } catch (error) {
+                    // If emoji fails to load, skip it and continue
+                    console.warn(`Failed to load emoji: ${url}`, error);
+                }
             }
 
             lastIndex = regex.lastIndex;
@@ -238,22 +266,26 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         // Draw remaining text in the line
         if (lastIndex < lineText.length) {
             const rest = lineText.slice(lastIndex);
-            canvas.text(
-                mode,
-                rest,
-                cursorX,
-                lineY,
-                font,
-                maxWidth,
-                false, // Don't use multiline for individual segments
-                false, // Don't wrap individual segments
-                0      // No line offset for segments
-            );
+            if (rest) {
+                if (mode === __1.FillOrStroke.fill) {
+                    canvas.ctx.fillText(rest, cursorX, lineY);
+                } else {
+                    canvas.ctx.strokeText(rest, cursorX, lineY);
+                }
+            }
         }
+    };
+
+    // Draw each line
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const lineText = lines[lineIndex];
+        const lineY = y + (lineIndex * actualLineOffset);
+        
+        await drawMixedLine(lineText, x, lineY);
     }
 
     // Restore style
     canvas.ctx[styleProp] = prevStyle;
     return this.success();
 }
-});
+})
