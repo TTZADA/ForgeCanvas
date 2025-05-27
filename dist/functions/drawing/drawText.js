@@ -22,7 +22,7 @@ exports.default = new forgescript_1.NativeFunction({
             name: 'mode',
             description: 'The mode of function.',
             type: forgescript_1.ArgType.Enum,
-            enum: FillOrStroke,
+            enum: __1.FillOrStroke,
             required: true,
             rest: false
         },
@@ -37,6 +37,7 @@ exports.default = new forgescript_1.NativeFunction({
             name: 'font',
             description: 'The font of text.',
             type: forgescript_1.ArgType.String,
+            check: (i) => __1.CanvasUtil.isValidFont(i),
             required: true,
             rest: false
         },
