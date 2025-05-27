@@ -98,148 +98,97 @@ exports.default = new forgescript_1.NativeFunction({
         },
     ],
 async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWidth, multiline, wrap, lineOffset]) {
-        const canvas = canvasName
-            ? ctx.canvasManager?.get(canvasName)
-            : ctx.canvasManager?.lastCurrent;
-        if (!canvas) return this.customError(FCError.NoCanvas);
+    const canvas = canvasName
+        ? ctx.canvasManager?.get(canvasName)
+        : ctx.canvasManager?.lastCurrent;
+    if (!canvas) return this.customError(__1.FCError.NoCanvas);
 
-        // Apply font and style
-        if (font) canvas.ctx.font = font;
-        const styleProp = mode === FillOrStroke.fill ? 'fillStyle' : 'strokeStyle';
-        const prevStyle = canvas.ctx[styleProp];
-        const resolved = style
-            ? await CanvasUtil.resolveStyle(this, ctx, canvas, style)
-            : null;
-        if (resolved instanceof Return) return resolved;
-        if (resolved) canvas.ctx[styleProp] = resolved;
+    // Apply font and style
+    if (font) canvas.ctx.font = font;
+    const styleProp = mode === __1.FillOrStroke.fill ? 'fillStyle' : 'strokeStyle';
+    const prevStyle = canvas.ctx[styleProp];
+    const resolved = style
+        ? await __1.CanvasUtil.resolveStyle(this, ctx, canvas, style)
+        : null;
+    if (resolved instanceof forgescript_1.Return) return resolved;
+    if (resolved) canvas.ctx[styleProp] = resolved;
 
-        // Determine emoji draw size
-        const size = emojiSize || parseInt(canvas.ctx.font) || 16;
-        const actualLineOffset = lineOffset || size * 1.2; // Default line spacing
+    // Determine emoji draw size
+    const size = emojiSize || parseInt(canvas.ctx.font) || 16;
+    const actualLineOffset = lineOffset || size * 1.2; // Default line spacing
 
-        // Helper function to measure text width including emojis
-        const measureMixedText = (text) => {
-            const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\uFE0F])/gu;
-            let width = 0;
-            let lastIndex = 0;
-            let match;
+    // Helper function to measure text width including emojis
+    const measureMixedText = (text) => {
+        const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\uFE0F])/gu;
+        let width = 0;
+        let lastIndex = 0;
+        let match;
 
-            while ((match = regex.exec(text))) {
-                // Add width of text before emoji
-                if (match.index > lastIndex) {
-                    const segment = text.slice(lastIndex, match.index);
-                    width += canvas.ctx.measureText(segment).width;
-                }
-                // Add emoji width
-                width += size;
-                lastIndex = regex.lastIndex;
+        while ((match = regex.exec(text))) {
+            // Add width of text before emoji
+            if (match.index > lastIndex) {
+                const segment = text.slice(lastIndex, match.index);
+                width += canvas.ctx.measureText(segment).width;
             }
-
-            // Add remaining text width
-            if (lastIndex < text.length) {
-                const rest = text.slice(lastIndex);
-                width += canvas.ctx.measureText(rest).width;
-            }
-
-            return width;
-        };
-
-        // Split text into lines if multiline/wrap is enabled
-        let lines = [];
-        if ((multiline || wrap) && maxWidth) {
-            const words = text.split(' ');
-            let currentLine = '';
-            
-            for (const word of words) {
-                const testLine = currentLine ? `${currentLine} ${word}` : word;
-                const testWidth = measureMixedText(testLine);
-                
-                if (testWidth > maxWidth && currentLine) {
-                    lines.push(currentLine);
-                    currentLine = word;
-                } else {
-                    currentLine = testLine;
-                }
-            }
-            
-            if (currentLine) {
-                lines.push(currentLine);
-            }
-        } else {
-            lines = [text];
+            // Add emoji width
+            width += size;
+            lastIndex = regex.lastIndex;
         }
 
-        // Draw each line
-        for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-            const lineText = lines[lineIndex];
-            const lineY = y + (lineIndex * actualLineOffset);
-            let cursorX = x;
+        // Add remaining text width
+        if (lastIndex < text.length) {
+            const rest = text.slice(lastIndex);
+            width += canvas.ctx.measureText(rest).width;
+        }
 
-            // Process each line for emojis and text
-            const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\uFE0F])/gu;
-            let lastIndex = 0;
-            let match;
+        return width;
+    };
 
-            while ((match = regex.exec(lineText))) {
-                const [full, name, id, unicode] = match;
-                
-                // Draw preceding text
-                if (match.index > lastIndex) {
-                    const segment = lineText.slice(lastIndex, match.index);
-                    canvas.text(
-                        mode,
-                        segment,
-                        cursorX,
-                        lineY,
-                        font,
-                        maxWidth,
-                        false, // Don't use multiline for individual segments
-                        false, // Don't wrap individual segments
-                        0      // No line offset for segments
-                    );
-                    cursorX += canvas.ctx.measureText(segment).width;
-                }
-
-                // Resolve emoji image URL
-                let url: string;
-                if (id) {
-                    // Discord custom emoji
-                    const ext = full.startsWith('<a:') ? 'gif' : 'png';
-                    url = `https://cdn.discordapp.com/emojis/${id}.${ext}`;
-                } else if (unicode) {
-                    // Unicode emoji - use Twemoji API
-                    const codepoint = Array.from(unicode)
-                        .map(c => c.codePointAt(0)!.toString(16))
-                        .join('-');
-                    url = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${codepoint}.png`;
-                } else {
-                    url = '';
-                }
-
-                if (url) {
-                    // Draw emoji using canvas.drawImage
-                    const img = await CanvasUtil.resolveImage(this, ctx, url);
-                    if (img instanceof Return) return img;
-                    
-                    await canvas.drawImage(
-                        img,
-                        cursorX,
-                        lineY - size,
-                        size,
-                        size
-                    );
-                    cursorX += size;
-                }
-
-                lastIndex = regex.lastIndex;
+    // Split text into lines if multiline/wrap is enabled
+    let lines = [];
+    if ((multiline || wrap) && maxWidth) {
+        const words = text.split(' ');
+        let currentLine = '';
+        
+        for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            const testWidth = measureMixedText(testLine);
+            
+            if (testWidth > maxWidth && currentLine) {
+                lines.push(currentLine);
+                currentLine = word;
+            } else {
+                currentLine = testLine;
             }
+        }
+        
+        if (currentLine) {
+            lines.push(currentLine);
+        }
+    } else {
+        lines = [text];
+    }
 
-            // Draw remaining text in the line
-            if (lastIndex < lineText.length) {
-                const rest = lineText.slice(lastIndex);
+    // Draw each line
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const lineText = lines[lineIndex];
+        const lineY = y + (lineIndex * actualLineOffset);
+        let cursorX = x;
+
+        // Process each line for emojis and text
+        const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\uFE0F])/gu;
+        let lastIndex = 0;
+        let match;
+
+        while ((match = regex.exec(lineText))) {
+            const [full, name, id, unicode] = match;
+            
+            // Draw preceding text
+            if (match.index > lastIndex) {
+                const segment = lineText.slice(lastIndex, match.index);
                 canvas.text(
                     mode,
-                    rest,
+                    segment,
                     cursorX,
                     lineY,
                     font,
@@ -248,11 +197,62 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     false, // Don't wrap individual segments
                     0      // No line offset for segments
                 );
+                cursorX += canvas.ctx.measureText(segment).width;
             }
+
+            // Resolve emoji image URL
+            let url: string;
+            if (id) {
+                // Discord custom emoji
+                const ext = full.startsWith('<a:') ? 'gif' : 'png';
+                url = `https://cdn.discordapp.com/emojis/${id}.${ext}`;
+            } else if (unicode) {
+                // Unicode emoji - use Twemoji API
+                const codepoint = Array.from(unicode)
+                    .map(c => c.codePointAt(0)!.toString(16))
+                    .join('-');
+                url = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${codepoint}.png`;
+            } else {
+                url = '';
+            }
+
+            if (url) {
+                // Draw emoji using canvas.drawImage
+                const img = await __1.CanvasUtil.resolveImage(this, ctx, url);
+                if (img instanceof forgescript_1.Return) return img;
+                
+                await canvas.drawImage(
+                    img,
+                    cursorX,
+                    lineY - size,
+                    size,
+                    size
+                );
+                cursorX += size;
+            }
+
+            lastIndex = regex.lastIndex;
         }
 
-        // Restore style
-        canvas.ctx[styleProp] = prevStyle;
-        return this.success();
+        // Draw remaining text in the line
+        if (lastIndex < lineText.length) {
+            const rest = lineText.slice(lastIndex);
+            canvas.text(
+                mode,
+                rest,
+                cursorX,
+                lineY,
+                font,
+                maxWidth,
+                false, // Don't use multiline for individual segments
+                false, // Don't wrap individual segments
+                0      // No line offset for segments
+            );
+        }
     }
+
+    // Restore style
+    canvas.ctx[styleProp] = prevStyle;
+    return this.success();
+}
 });
