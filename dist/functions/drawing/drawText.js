@@ -201,7 +201,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
             }
 
             // Resolve emoji image URL
-            let url: string;
+            let url;
             if (id) {
                 // Discord custom emoji
                 const ext = full.startsWith('<a:') ? 'gif' : 'png';
@@ -209,7 +209,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
             } else if (unicode) {
                 // Unicode emoji - use Twemoji API
                 const codepoint = Array.from(unicode)
-                    .map(c => c.codePointAt(0)!.toString(16))
+                    .map(c => c.codePointAt(0).toString(16))
                     .join('-');
                 url = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${codepoint}.png`;
             } else {
