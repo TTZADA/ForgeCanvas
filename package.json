@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@gifsx/gifsx": "^1.0.15",
-    "@napi-rs/canvas": "^0.1.67"
+    "@napi-rs/canvas": "^0.1.67",
+    "emoji-regex": "^10.4.0"
   }
 }
