@@ -180,7 +180,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                 let currentLine = '';
                 
                 for (const word of words) {
-                    const testLine = currentLine ? ${currentLine} ${word} : word;
+                    const testLine = currentLine ? `${currentLine} ${word}` : word;
                     const testWidth = meassreMixedText(testLine);
                     
                     if (testWidth > maxWidth && currentLine) {
@@ -261,13 +261,13 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
             if (id) {
                 // Discord custom emoji
                 const ext = full.startsWith('<a:') ? 'gif' : 'png';
-                url = https://cdn.discordapp.com/emojis/${id}.${ext};
+                url = `https://cdn.discordapp.com/emojis/${id}.${ext}`;
             } else if (unicode) {
                 // Unicode emoji - use Twemoji API
                 const codepoint = Array.from(unicode)
                     .map(c => c.codePointAt(0).toString(16))
                     .join('-');
-                url = https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${codepoint}.png;
+                url = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${codepoint}.png`;
             }
 
             if (url) {
