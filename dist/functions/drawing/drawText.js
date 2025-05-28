@@ -164,7 +164,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                         const testLine = currentLine ? `${currentLine} ${word}` : word;
                         const testWidth = measureMixedText(testLine);
                         
-                        if (testWidth > maxWidth && currentLine) {
+                        if (testWidth > maxWidth && currentLine !== '') {
                             lines.push(currentLine);
                             currentLine = word;
                         } else {
@@ -172,27 +172,33 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                         }
                     }
                     
-                    if (currentLine) {
+                    if (currentLine !== '') {
                         lines.push(currentLine);
                     }
                 } else {
-                    // Sem wrap, quebrar caractere por caractere quando necessário
-                    let currentLine = '';
-                    
-                    for (let i = 0; i < explicitLine.length; i++) {
-                        const testLine = currentLine + explicitLine[i];
-                        const testWidth = measureMixedText(testLine);
+                    // Sem wrap, verificar se a linha inteira cabe
+                    const lineWidth = measureMixedText(explicitLine);
+                    if (lineWidth > maxWidth) {
+                        // Quebrar caractere por caractere quando necessário
+                        let currentLine = '';
                         
-                        if (testWidth > maxWidth && currentLine) {
-                            lines.push(currentLine);
-                            currentLine = explicitLine[i];
-                        } else {
-                            currentLine = testLine;
+                        for (let i = 0; i < explicitLine.length; i++) {
+                            const testLine = currentLine + explicitLine[i];
+                            const testWidth = measureMixedText(testLine);
+                            
+                            if (testWidth > maxWidth && currentLine !== '') {
+                                lines.push(currentLine);
+                                currentLine = explicitLine[i];
+                            } else {
+                                currentLine = testLine;
+                            }
                         }
-                    }
-                    
-                    if (currentLine) {
-                        lines.push(currentLine);
+                        
+                        if (currentLine !== '') {
+                            lines.push(currentLine);
+                        }
+                    } else {
+                        lines.push(explicitLine);
                     }
                 }
             } else {
@@ -203,45 +209,52 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
     } else {
         // Sem multiline, mas com maxWidth sempre criar nova linha quando necessário
         if (maxWidth) {
-            if (wrap) {
-                // Com wrap, quebrar por palavras
-                const words = text.split(' ');
-                let currentLine = '';
-                
-                for (const word of words) {
-                    const testLine = currentLine ? `${currentLine} ${word}` : word;
-                    const testWidth = measureMixedText(testLine);
+            const totalWidth = measureMixedText(text);
+            
+            if (totalWidth > maxWidth) {
+                if (wrap) {
+                    // Com wrap, quebrar por palavras
+                    const words = text.split(' ');
+                    let currentLine = '';
                     
-                    if (testWidth > maxWidth && currentLine) {
-                        lines.push(currentLine);
-                        currentLine = word;
-                    } else {
-                        currentLine = testLine;
+                    for (const word of words) {
+                        const testLine = currentLine ? `${currentLine} ${word}` : word;
+                        const testWidth = measureMixedText(testLine);
+                        
+                        if (testWidth > maxWidth && currentLine !== '') {
+                            lines.push(currentLine);
+                            currentLine = word;
+                        } else {
+                            currentLine = testLine;
+                        }
                     }
-                }
-                
-                if (currentLine) {
-                    lines.push(currentLine);
+                    
+                    if (currentLine !== '') {
+                        lines.push(currentLine);
+                    }
+                } else {
+                    // Sem wrap, quebrar caractere por caractere quando necessário
+                    let currentLine = '';
+                    
+                    for (let i = 0; i < text.length; i++) {
+                        const testLine = currentLine + text[i];
+                        const testWidth = measureMixedText(testLine);
+                        
+                        if (testWidth > maxWidth && currentLine !== '') {
+                            lines.push(currentLine);
+                            currentLine = text[i];
+                        } else {
+                            currentLine = testLine;
+                        }
+                    }
+                    
+                    if (currentLine !== '') {
+                        lines.push(currentLine);
+                    }
                 }
             } else {
-                // Sem wrap, quebrar caractere por caractere quando necessário
-                let currentLine = '';
-                
-                for (let i = 0; i < text.length; i++) {
-                    const testLine = currentLine + text[i];
-                    const testWidth = measureMixedText(testLine);
-                    
-                    if (testWidth > maxWidth && currentLine) {
-                        lines.push(currentLine);
-                        currentLine = text[i];
-                    } else {
-                        currentLine = testLine;
-                    }
-                }
-                
-                if (currentLine) {
-                    lines.push(currentLine);
-                }
+                // Texto cabe em uma linha
+                lines = [text];
             }
         } else {
             // Sem maxWidth nem multiline - uma linha apenas
