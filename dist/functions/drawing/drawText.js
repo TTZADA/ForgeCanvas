@@ -205,7 +205,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         let currentLine = '';
         
         for (const word of words) {
-            const testLine = currentLine ? ${currentLine} ${word} : word;
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
             const testWidth = measureMixedText(testLine);
             
             if (testWidth > maxWidth && currentLine) {
