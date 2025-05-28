@@ -4,8 +4,6 @@ const forgescript_1 = require("@tryforge/forgescript");
 const __1 = require("../..");
 const emojiRegex = require("emoji-regex");
 
-const emojiRe = emojiRegex();
-
 exports.default = new forgescript_1.NativeFunction({
     name: '$drawText',
     aliases: ['$placeText', '$text', '$writeText', '$addText'],
@@ -142,7 +140,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
     // Create combined regex for Discord emojis and Unicode emojis
     const createCombinedRegex = () => {
         const discordEmojiPattern = '<a?:(\\w+):(\\d+)>';
-        const unicodeEmojiPattern = emojiRe;
+        const unicodeEmojiPattern = emojiRegex().source;
         return new RegExp(`(${discordEmojiPattern})|(${unicodeEmojiPattern})`, 'gu');
     };
 
