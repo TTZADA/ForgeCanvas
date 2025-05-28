@@ -118,9 +118,27 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
     const size = emojiSize || parseInt(canvas.ctx.font) || 16;
     const actualLineOffset = lineOffset || size * 1.2; // Default line spacing
 
+    // Helper function to check if URL exists (with cache)
+    const urlCache = new Map();
+    const checkUrl = async (url) => {
+        if (urlCache.has(url)) {
+            return urlCache.get(url);
+        }
+        
+        try {
+            const response = await fetch(url, { method: 'HEAD' });
+            const exists = response.ok;
+            urlCache.set(url, exists);
+            return exists;
+        } catch (error) {
+            urlCache.set(url, false);
+            return false;
+        }
+    };
+
     // Helper function to measure text width including emojis
     const measureMixedText = (text) => {
-        const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\uFE0F])/gu;
+        const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\p{Emoji}\uFE0F]+)/gu;
         let width = 0;
         let lastIndex = 0;
         let match;
@@ -131,7 +149,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                 const segment = text.slice(lastIndex, match.index);
                 width += canvas.ctx.measureText(segment).width;
             }
-            // Add emoji width (custom emojis should not break lines)
+            // Add emoji width
             width += size;
             lastIndex = regex.lastIndex;
         }
@@ -143,6 +161,11 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         }
 
         return width;
+    };
+
+    // Helper function to check if a word contains custom emoji that shouldn't be broken
+    const containsCustomEmoji = (text) => {
+        return /<a?:\w+:\d+>/.test(text);
     };
 
     // Split text into lines
@@ -162,12 +185,10 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     
                     for (const word of words) {
                         const testLine = currentLine ? `${currentLine} ${word}` : word;
-                        
-                        // Check if word contains custom emoji - if so, don't break it
-                        const hasCustomEmoji = /<a?:\w+:\d+>/.test(word);
                         const testWidth = measureMixedText(testLine);
                         
-                        if (testWidth > maxWidth && currentLine !== '' && !hasCustomEmoji) {
+                        // Se a palavra contém emoji personalizado, não quebrar mesmo se exceder maxWidth
+                        if (testWidth > maxWidth && currentLine !== '' && !containsCustomEmoji(word)) {
                             lines.push(currentLine);
                             currentLine = word;
                         } else {
@@ -179,21 +200,53 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                         lines.push(currentLine);
                     }
                 } else {
-                    // Sem wrap, verificar se a linha inteira cabe
+                    // Sem wrap, mas ainda respeitando emojis personalizados
                     const lineWidth = measureMixedText(explicitLine);
-                    if (lineWidth > maxWidth) {
-                        // Quebrar caractere por caractere quando necessário
+                    if (lineWidth > maxWidth && !containsCustomEmoji(explicitLine)) {
+                        // Quebrar caractere por caractere, mas preservando emojis personalizados
                         let currentLine = '';
+                        const regex = /<a?:\w+:\d+>/g;
+                        let lastIndex = 0;
+                        let match;
                         
-                        for (let i = 0; i < explicitLine.length; i++) {
-                            const char = explicitLine[i];
-                            const testLine = currentLine + char;
+                        while ((match = regex.exec(explicitLine))) {
+                            // Processar texto antes do emoji
+                            const beforeEmoji = explicitLine.slice(lastIndex, match.index);
+                            for (let i = 0; i < beforeEmoji.length; i++) {
+                                const char = beforeEmoji[i];
+                                const testLine = currentLine + char;
+                                const testWidth = measureMixedText(testLine);
+                                
+                                if (testWidth > maxWidth && currentLine !== '') {
+                                    lines.push(currentLine);
+                                    currentLine = char;
+                                } else {
+                                    currentLine = testLine;
+                                }
+                            }
                             
-                            // Check if we're in the middle of a custom emoji pattern
-                            const isInCustomEmoji = /<a?:[^>]*$/.test(currentLine) || /^[^<]*>/.test(char);
+                            // Adicionar o emoji completo
+                            const emojiTestLine = currentLine + match[0];
+                            const emojiTestWidth = measureMixedText(emojiTestLine);
+                            
+                            if (emojiTestWidth > maxWidth && currentLine !== '') {
+                                lines.push(currentLine);
+                                currentLine = match[0];
+                            } else {
+                                currentLine = emojiTestLine;
+                            }
+                            
+                            lastIndex = match.index + match[0].length;
+                        }
+                        
+                        // Processar texto restante
+                        const remaining = explicitLine.slice(lastIndex);
+                        for (let i = 0; i < remaining.length; i++) {
+                            const char = remaining[i];
+                            const testLine = currentLine + char;
                             const testWidth = measureMixedText(testLine);
                             
-                            if (testWidth > maxWidth && currentLine !== '' && !isInCustomEmoji) {
+                            if (testWidth > maxWidth && currentLine !== '') {
                                 lines.push(currentLine);
                                 currentLine = char;
                             } else {
@@ -220,18 +273,16 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
             
             if (totalWidth > maxWidth) {
                 if (wrap) {
-                    // Com wrap, quebrar por palavras
+                    // Com wrap, quebrar por palavras respeitando emojis personalizados
                     const words = text.split(' ');
                     let currentLine = '';
                     
                     for (const word of words) {
                         const testLine = currentLine ? `${currentLine} ${word}` : word;
-                        
-                        // Check if word contains custom emoji - if so, don't break it
-                        const hasCustomEmoji = /<a?:\w+:\d+>/.test(word);
                         const testWidth = measureMixedText(testLine);
                         
-                        if (testWidth > maxWidth && currentLine !== '' && !hasCustomEmoji) {
+                        // Se a palavra contém emoji personalizado, não quebrar mesmo se exceder maxWidth
+                        if (testWidth > maxWidth && currentLine !== '' && !containsCustomEmoji(word)) {
                             lines.push(currentLine);
                             currentLine = word;
                         } else {
@@ -243,27 +294,64 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                         lines.push(currentLine);
                     }
                 } else {
-                    // Sem wrap, quebrar caractere por caractere quando necessário
-                    let currentLine = '';
-                    
-                    for (let i = 0; i < text.length; i++) {
-                        const char = text[i];
-                        const testLine = currentLine + char;
+                    // Aplicar a mesma lógica do multiline sem wrap
+                    if (!containsCustomEmoji(text)) {
+                        let currentLine = '';
+                        const regex = /<a?:\w+:\d+>/g;
+                        let lastIndex = 0;
+                        let match;
                         
-                        // Check if we're in the middle of a custom emoji pattern
-                        const isInCustomEmoji = /<a?:[^>]*$/.test(currentLine) || /^[^<]*>/.test(char);
-                        const testWidth = measureMixedText(testLine);
-                        
-                        if (testWidth > maxWidth && currentLine !== '' && !isInCustomEmoji) {
-                            lines.push(currentLine);
-                            currentLine = char;
-                        } else {
-                            currentLine = testLine;
+                        while ((match = regex.exec(text))) {
+                            // Processar texto antes do emoji
+                            const beforeEmoji = text.slice(lastIndex, match.index);
+                            for (let i = 0; i < beforeEmoji.length; i++) {
+                                const char = beforeEmoji[i];
+                                const testLine = currentLine + char;
+                                const testWidth = measureMixedText(testLine);
+                                
+                                if (testWidth > maxWidth && currentLine !== '') {
+                                    lines.push(currentLine);
+                                    currentLine = char;
+                                } else {
+                                    currentLine = testLine;
+                                }
+                            }
+                            
+                            // Adicionar o emoji completo
+                            const emojiTestLine = currentLine + match[0];
+                            const emojiTestWidth = measureMixedText(emojiTestLine);
+                            
+                            if (emojiTestWidth > maxWidth && currentLine !== '') {
+                                lines.push(currentLine);
+                                currentLine = match[0];
+                            } else {
+                                currentLine = emojiTestLine;
+                            }
+                            
+                            lastIndex = match.index + match[0].length;
                         }
-                    }
-                    
-                    if (currentLine !== '') {
-                        lines.push(currentLine);
+                        
+                        // Processar texto restante
+                        const remaining = text.slice(lastIndex);
+                        for (let i = 0; i < remaining.length; i++) {
+                            const char = remaining[i];
+                            const testLine = currentLine + char;
+                            const testWidth = measureMixedText(testLine);
+                            
+                            if (testWidth > maxWidth && currentLine !== '') {
+                                lines.push(currentLine);
+                                currentLine = char;
+                            } else {
+                                currentLine = testLine;
+                            }
+                        }
+                        
+                        if (currentLine !== '') {
+                            lines.push(currentLine);
+                        }
+                    } else {
+                        // Texto com emoji personalizado - renderizar mesmo excedendo maxWidth
+                        lines = [text];
                     }
                 }
             } else {
@@ -278,7 +366,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
 
     // Helper function to draw mixed text and emojis for a single line
     const drawMixedLine = async (lineText, lineX, lineY) => {
-        const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\uFE0F])/gu;
+        const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\p{Emoji}\uFE0F]+)/gu;
         let cursorX = lineX;
         let lastIndex = 0;
         let match;
@@ -301,36 +389,77 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
 
             // Resolve and draw emoji
             let url;
+            let shouldTryLoad = true;
+            
             if (id) {
                 // Discord custom emoji
                 const ext = full.startsWith('<a:') ? 'gif' : 'png';
                 url = `https://cdn.discordapp.com/emojis/${id}.${ext}`;
             } else if (unicode) {
-                // Unicode emoji - use Twemoji API
-                const codepoint = Array.from(unicode)
-                    .map(c => c.codePointAt(0).toString(16))
-                    .join('-');
-                url = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${codepoint}.png`;
+                // Unicode emoji - use Twemoji API with better codepoint handling
+                const codepoints = [];
+                for (const char of unicode) {
+                    const code = char.codePointAt(0);
+                    if (code) {
+                        codepoints.push(code.toString(16));
+                    }
+                }
+                
+                if (codepoints.length > 0) {
+                    const codepointStr = codepoints.join('-');
+                    url = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${codepointStr}.png`;
+                } else {
+                    shouldTryLoad = false;
+                }
             }
 
-            if (url) {
+            if (url && shouldTryLoad) {
                 try {
-                    const img = await __1.CanvasUtil.resolveImage(this, ctx, url);
-                    if (img instanceof forgescript_1.Return) return img;
+                    // Check if URL exists before trying to load
+                    const urlExists = await checkUrl(url);
                     
-                    // Draw emoji aligned with text baseline
-                    canvas.ctx.drawImage(
-                        img,
-                        cursorX,
-                        lineY - size + (size * 0.2), // Adjust vertical position for better alignment
-                        size,
-                        size
-                    );
+                    if (urlExists) {
+                        const img = await __1.CanvasUtil.resolveImage(this, ctx, url);
+                        if (img instanceof forgescript_1.Return) return img;
+                        
+                        // Draw emoji aligned with text baseline
+                        canvas.ctx.drawImage(
+                            img,
+                            cursorX,
+                            lineY - size + (size * 0.2), // Adjust vertical position for better alignment
+                            size,
+                            size
+                        );
+                    } else {
+                        // URL doesn't exist, render as text fallback
+                        const fallbackText = name || unicode || full;
+                        if (mode === __1.FillOrStroke.fill) {
+                            canvas.ctx.fillText(fallbackText, cursorX, lineY);
+                        } else {
+                            canvas.ctx.strokeText(fallbackText, cursorX, lineY);
+                        }
+                    }
                     cursorX += size;
                 } catch (error) {
-                    // If emoji fails to load, skip it and continue
+                    // If emoji fails to load, render as text fallback
                     console.warn(`Failed to load emoji: ${url}`, error);
+                    const fallbackText = name || unicode || full;
+                    if (mode === __1.FillOrStroke.fill) {
+                        canvas.ctx.fillText(fallbackText, cursorX, lineY);
+                    } else {
+                        canvas.ctx.strokeText(fallbackText, cursorX, lineY);
+                    }
+                    cursorX += canvas.ctx.measureText(fallbackText).width;
                 }
+            } else {
+                // No valid URL, render as text
+                const fallbackText = name || unicode || full;
+                if (mode === __1.FillOrStroke.fill) {
+                    canvas.ctx.fillText(fallbackText, cursorX, lineY);
+                } else {
+                    canvas.ctx.strokeText(fallbackText, cursorX, lineY);
+                }
+                cursorX += canvas.ctx.measureText(fallbackText).width;
             }
 
             lastIndex = regex.lastIndex;
