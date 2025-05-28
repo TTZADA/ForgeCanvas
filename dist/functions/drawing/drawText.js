@@ -153,9 +153,59 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         const explicitLines = text.split('\n');
         
         for (const explicitLine of explicitLines) {
-            if (wrap && maxWidth) {
-                // Se wrap também estiver ativado, quebrar linhas longas
-                const words = explicitLine.split(' ');
+            if (maxWidth) {
+                // Com maxWidth, sempre quebrar linhas que excedam o limite
+                if (wrap) {
+                    // Com wrap, quebrar por palavras
+                    const words = explicitLine.split(' ');
+                    let currentLine = '';
+                    
+                    for (const word of words) {
+                        const testLine = currentLine ? `${currentLine} ${word}` : word;
+                        const testWidth = measureMixedText(testLine);
+                        
+                        if (testWidth > maxWidth && currentLine) {
+                            lines.push(currentLine);
+                            currentLine = word;
+                        } else {
+                            currentLine = testLine;
+                        }
+                    }
+                    
+                    if (currentLine) {
+                        lines.push(currentLine);
+                    }
+                } else {
+                    // Sem wrap, quebrar caractere por caractere quando necessário
+                    let currentLine = '';
+                    
+                    for (let i = 0; i < explicitLine.length; i++) {
+                        const testLine = currentLine + explicitLine[i];
+                        const testWidth = measureMixedText(testLine);
+                        
+                        if (testWidth > maxWidth && currentLine) {
+                            lines.push(currentLine);
+                            currentLine = explicitLine[i];
+                        } else {
+                            currentLine = testLine;
+                        }
+                    }
+                    
+                    if (currentLine) {
+                        lines.push(currentLine);
+                    }
+                }
+            } else {
+                // Sem maxWidth, apenas adicionar a linha como está
+                lines.push(explicitLine);
+            }
+        }
+    } else {
+        // Sem multiline, mas com maxWidth sempre criar nova linha quando necessário
+        if (maxWidth) {
+            if (wrap) {
+                // Com wrap, quebrar por palavras
+                const words = text.split(' ');
                 let currentLine = '';
                 
                 for (const word of words) {
@@ -174,33 +224,29 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     lines.push(currentLine);
                 }
             } else {
-                // Apenas adicionar a linha como está
-                lines.push(explicitLine);
+                // Sem wrap, quebrar caractere por caractere quando necessário
+                let currentLine = '';
+                
+                for (let i = 0; i < text.length; i++) {
+                    const testLine = currentLine + text[i];
+                    const testWidth = measureMixedText(testLine);
+                    
+                    if (testWidth > maxWidth && currentLine) {
+                        lines.push(currentLine);
+                        currentLine = text[i];
+                    } else {
+                        currentLine = testLine;
+                    }
+                }
+                
+                if (currentLine) {
+                    lines.push(currentLine);
+                }
             }
+        } else {
+            // Sem maxWidth nem multiline - uma linha apenas
+            lines = [text];
         }
-    } else if (wrap && maxWidth) {
-        // Apenas wrap sem multiline - quebrar por palavras
-        const words = text.split(' ');
-        let currentLine = '';
-        
-        for (const word of words) {
-            const testLine = currentLine ? `${currentLine} ${word}` : word;
-            const testWidth = measureMixedText(testLine);
-            
-            if (testWidth > maxWidth && currentLine) {
-                lines.push(currentLine);
-                currentLine = word;
-            } else {
-                currentLine = testLine;
-            }
-        }
-        
-        if (currentLine) {
-            lines.push(currentLine);
-        }
-    } else {
-        // Sem multiline nem wrap - uma linha apenas
-        lines = [text];
     }
 
     // Helper function to draw mixed text and emojis for a single line
