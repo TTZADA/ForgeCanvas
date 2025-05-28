@@ -131,7 +131,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                 const segment = text.slice(lastIndex, match.index);
                 width += canvas.ctx.measureText(segment).width;
             }
-            // Add emoji width
+            // Add emoji width (custom emojis should not break lines)
             width += size;
             lastIndex = regex.lastIndex;
         }
@@ -162,9 +162,12 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     
                     for (const word of words) {
                         const testLine = currentLine ? `${currentLine} ${word}` : word;
+                        
+                        // Check if word contains custom emoji - if so, don't break it
+                        const hasCustomEmoji = /<a?:\w+:\d+>/.test(word);
                         const testWidth = measureMixedText(testLine);
                         
-                        if (testWidth > maxWidth && currentLine !== '') {
+                        if (testWidth > maxWidth && currentLine !== '' && !hasCustomEmoji) {
                             lines.push(currentLine);
                             currentLine = word;
                         } else {
@@ -183,12 +186,16 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                         let currentLine = '';
                         
                         for (let i = 0; i < explicitLine.length; i++) {
-                            const testLine = currentLine + explicitLine[i];
+                            const char = explicitLine[i];
+                            const testLine = currentLine + char;
+                            
+                            // Check if we're in the middle of a custom emoji pattern
+                            const isInCustomEmoji = /<a?:[^>]*$/.test(currentLine) || /^[^<]*>/.test(char);
                             const testWidth = measureMixedText(testLine);
                             
-                            if (testWidth > maxWidth && currentLine !== '') {
+                            if (testWidth > maxWidth && currentLine !== '' && !isInCustomEmoji) {
                                 lines.push(currentLine);
-                                currentLine = explicitLine[i];
+                                currentLine = char;
                             } else {
                                 currentLine = testLine;
                             }
@@ -219,9 +226,12 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     
                     for (const word of words) {
                         const testLine = currentLine ? `${currentLine} ${word}` : word;
+                        
+                        // Check if word contains custom emoji - if so, don't break it
+                        const hasCustomEmoji = /<a?:\w+:\d+>/.test(word);
                         const testWidth = measureMixedText(testLine);
                         
-                        if (testWidth > maxWidth && currentLine !== '') {
+                        if (testWidth > maxWidth && currentLine !== '' && !hasCustomEmoji) {
                             lines.push(currentLine);
                             currentLine = word;
                         } else {
@@ -237,12 +247,16 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     let currentLine = '';
                     
                     for (let i = 0; i < text.length; i++) {
-                        const testLine = currentLine + text[i];
+                        const char = text[i];
+                        const testLine = currentLine + char;
+                        
+                        // Check if we're in the middle of a custom emoji pattern
+                        const isInCustomEmoji = /<a?:[^>]*$/.test(currentLine) || /^[^<]*>/.test(char);
                         const testWidth = measureMixedText(testLine);
                         
-                        if (testWidth > maxWidth && currentLine !== '') {
+                        if (testWidth > maxWidth && currentLine !== '' && !isInCustomEmoji) {
                             lines.push(currentLine);
-                            currentLine = text[i];
+                            currentLine = char;
                         } else {
                             currentLine = testLine;
                         }
