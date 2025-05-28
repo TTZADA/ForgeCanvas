@@ -141,7 +141,10 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
 
     // Helper function to measure text width including emojis
     const measureMixedText = (text) => {
-        const regex = /<a?:(\w+):(\d+)>|(${emojiRe.source})/gu;
+        const regex = new RegExp(
+           `<a?:(\\w+):(\\d+)>|(${emojiRe.source})`,
+           'gu'
+       );
         let width = 0;
         let lastIndex = 0;
         let match;
@@ -386,7 +389,10 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
 
     // Helper function to draw mixed text and emojis for a single line
     const drawMixedLine = async (lineText, lineX, lineY) => {
-        const regex = /<a?:(\w+):(\d+)>|(${emojiRe.source})/gu;
+        const regex = new RegExp(
+           `<a?:(\\w+):(\\d+)>|(${emojiRe.source})`,
+           'gu'
+       );
         let cursorX = lineX;
         let lastIndex = 0;
         let match;
