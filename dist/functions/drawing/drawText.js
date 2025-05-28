@@ -275,82 +275,90 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         }
     };
 
-    // Função para agrupar tokens que devem ficar juntos
+    // Função para agrupar tokens que devem ficar juntos (grupos pequenos e inteligentes)
     const groupTokens = (tokens) => {
         const groups = [];
-        let currentGroup = [];
         
         for (let i = 0; i < tokens.length; i++) {
             const token = tokens[i];
             const nextToken = tokens[i + 1];
             const prevToken = tokens[i - 1];
             
-            currentGroup.push(token);
-            
-            // Se é um emoji, verifica se deve agrupar com texto adjacente
             if (token.type === 'emoji') {
-                // Se há texto imediatamente antes ou depois, inclui no grupo
-                if (prevToken && prevToken.type === 'text' && currentGroup.length === 1) {
-                    // Move o token anterior para este grupo
-                    const lastGroup = groups[groups.length - 1];
-                    if (lastGroup && lastGroup.length > 0) {
-                        const movedToken = lastGroup.pop();
-                        currentGroup.unshift(movedToken);
-                        if (lastGroup.length === 0) {
-                            groups.pop();
-                        }
-                    }
-                }
+                const group = [];
                 
-                if (nextToken && nextToken.type === 'text') {
-                    // Inclui o próximo token de texto no grupo atual
-                    i++; // Pula o próximo token no loop principal
-                    currentGroup.push(nextToken);
-                }
-                
-                // Finaliza o grupo atual
-                groups.push(currentGroup);
-                currentGroup = [];
-            }
-            // Se é texto seguido de espaço ou fim, pode finalizar o grupo
-            else if (token.type === 'text') {
-                // Verifica se o texto contém espaços para quebrar em palavras
-                const words = token.content.split(' ');
-                if (words.length > 1) {
-                    // Remove o token atual do grupo
-                    currentGroup.pop();
+                // Verifica se deve incluir texto imediatamente antes (máximo uma palavra)
+                if (prevToken && prevToken.type === 'text') {
+                    const prevWords = prevToken.content.trim().split(' ');
+                    const lastWord = prevWords[prevWords.length - 1];
                     
-                    // Adiciona cada palavra como um grupo separado
-                    for (let j = 0; j < words.length; j++) {
-                        const word = words[j];
-                        if (word) {
-                            const wordGroup = [...currentGroup, { type: 'text', content: word }];
-                            groups.push(wordGroup);
-                            currentGroup = []; // Reset para próximas palavras
+                    // Se a palavra anterior é pequena (até 10 caracteres), inclui no grupo
+                    if (lastWord && lastWord.length <= 10) {
+                        // Remove a última palavra do token anterior
+                        const remainingText = prevWords.slice(0, -1).join(' ');
+                        if (remainingText.trim()) {
+                            // Modifica o grupo anterior para ter apenas o texto restante
+                            if (groups.length > 0) {
+                                const lastGroup = groups[groups.length - 1];
+                                if (lastGroup.length === 1 && lastGroup[0].type === 'text') {
+                                    lastGroup[0].content = remainingText + ' ';
+                                }
+                            }
+                        } else {
+                            // Remove o grupo anterior completamente se estava vazio
+                            if (groups.length > 0) {
+                                groups.pop();
+                            }
                         }
                         
-                        // Adiciona espaço como grupo separado (exceto após a última palavra)
-                        if (j < words.length - 1) {
-                            groups.push([{ type: 'text', content: ' ' }]);
-                        }
+                        group.push({ type: 'text', content: lastWord });
                     }
-                } else {
-                    // Texto sem espaços, continua no grupo atual
-                    // Será finalizado quando encontrar próximo emoji ou fim
-                    if (!nextToken || nextToken.type === 'emoji') {
-                        groups.push(currentGroup);
-                        currentGroup = [];
+                }
+                
+                // Adiciona o emoji
+                group.push(token);
+                
+                // Verifica se deve incluir texto imediatamente depois (máximo uma palavra)
+                if (nextToken && nextToken.type === 'text') {
+                    const nextWords = nextToken.content.trim().split(' ');
+                    const firstWord = nextWords[0];
+                    
+                    // Se a próxima palavra é pequena (até 10 caracteres), inclui no grupo
+                    if (firstWord && firstWord.length <= 10) {
+                        group.push({ type: 'text', content: firstWord });
+                        
+                        // Modifica o próximo token para ter apenas o texto restante
+                        const remainingText = nextWords.slice(1).join(' ');
+                        if (remainingText.trim()) {
+                            nextToken.content = ' ' + remainingText;
+                        } else {
+                            // Marca o próximo token para ser pulado
+                            tokens[i + 1] = null;
+                        }
+                        
+                        i++; // Pula o próximo token se foi processado
+                    }
+                }
+                
+                groups.push(group);
+            }
+            else if (token.type === 'text') {
+                // Quebra texto em palavras individuais
+                const words = token.content.trim().split(/(\s+)/); // Preserva espaços
+                
+                for (const word of words) {
+                    if (word.trim()) {
+                        groups.push([{ type: 'text', content: word }]);
+                    } else if (word) {
+                        // Espaços
+                        groups.push([{ type: 'text', content: word }]);
                     }
                 }
             }
         }
         
-        // Adiciona qualquer grupo restante
-        if (currentGroup.length > 0) {
-            groups.push(currentGroup);
-        }
-        
-        return groups;
+        // Remove grupos nulos
+        return groups.filter(group => group && group.length > 0);
     };
 
     // Função para quebrar grupos por largura máxima
