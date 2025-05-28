@@ -432,17 +432,8 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                 }
                 
                 if (codepoints.length > 0) {
-                    const skinToneModifiers = [
-                      '1f3fb', // Light skin tone
-                      '1f3fc', // Medium-light skin tone
-                      '1f3fd', // Medium skin tone
-                      '1f3fe', // Medium-dark skin tone
-                      '1f3ff'  // Dark skin tone
-                  ];
-
-            let filteredCodepoints = codepoints.filter(cp => !skinToneModifiers.includes(cp.toLowerCase()));
-
-            let codepointStr = filteredCodepoints.join('-');
+                    
+                let codepointStr = codepoints.join('-');
 
                  url = `https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/${codepointStr}.png`;
                     fallbackText = unicodeEmoji;
