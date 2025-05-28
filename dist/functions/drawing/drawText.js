@@ -137,7 +137,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
     };
 
     // Regex completa para capturar emojis Discord e TODOS os emojis Unicode
-    const emojiRegex = /<a?:(\w+):(\d+)>|((?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\u200D(?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?))*)|\d\uFE0F\u20E3)/gu;
+    const emojiRegex = /<a?:(\w+):(\d+)>|((?:\p{Extended_Pictographic}(?:\u200D(?:\p{Extended_Pictographic})?)*)|\d\uFE0F\u20E3)/gu;
 
     // Helper function to measure text width including emojis
     const measureMixedText = (text) => {
