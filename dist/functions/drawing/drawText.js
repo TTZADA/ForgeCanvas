@@ -145,109 +145,109 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         return width;
     };
 
-    // Enhanced line breaking function that respects maxWidth
-    const breakTextIntoLines = (text) => {
-        let lines = [];
+    // Split text into lines
+    let lines = [];
+    
+    if (multiline) {
+        // Se multiline for true, primeiro dividir por quebras de linha explícitas (\n)
+        const explicitLines = text.split('\n');
         
-        if (multiline) {
-            // Se multiline for true, primeiro dividir por quebras de linha explícitas (\n)
-            const explicitLines = text.split('\n');
-            
-            for (const explicitLine of explicitLines) {
-                if (maxWidth) {
-                    // Quebra com base no maxWidth
-                    lines = lines.concat(breakLineByWidth(explicitLine, maxWidth, wrap));
-                } else {
-                    lines.push(explicitLine);
-                }
-            }
-        } else if (maxWidth) {
-            // Mesmo sem multiline, se maxWidth for especificado, quebra automaticamente
-            lines = breakLineByWidth(text, maxWidth, wrap);
-        } else {
-            // Sem multiline nem maxWidth - uma linha apenas
-            lines = [text];
-        }
-        
-        return lines;
-    };
-
-    // Function to break a single line by width considering emojis
-    const breakLineByWidth = (text, maxWidth, useWrap) => {
-        const lines = [];
-        const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\uFE0F])/gu;
-        
-        if (useWrap) {
-            // Quebra por palavras quando wrap está ativado
-            const words = text.split(' ');
-            let currentLine = '';
-            
-            for (const word of words) {
-                const testLine = currentLine ? `${currentLine} ${word}` : word;
-                const testWidth = measureMixedText(testLine);
-                
-                if (testWidth > maxWidth && currentLine) {
-                    lines.push(currentLine);
-                    currentLine = word;
-                } else {
-                    currentLine = testLine;
-                }
-            }
-            
-            if (currentLine) {
-                lines.push(currentLine);
-            }
-        } else {
-            // Quebra caractere por caractere considerando emojis
-            let currentLine = '';
-            let i = 0;
-            
-            while (i < text.length) {
-                let nextChar = '';
-                let charWidth = 0;
-                
-                // Verifica se é um emoji customizado ou unicode
-                const remaining = text.slice(i);
-                const emojiMatch = remaining.match(/^(<a?:\w+:\d+>|[\p{Emoji_Presentation}\uFE0F])/u);
-                
-                if (emojiMatch) {
-                    nextChar = emojiMatch[0];
-                    charWidth = size; // Emoji width
-                    i += nextChar.length;
-                } else {
-                    nextChar = text[i];
-                    charWidth = canvas.ctx.measureText(nextChar).width;
-                    i++;
-                }
-                
-                const testLine = currentLine + nextChar;
-                const testWidth = measureMixedText(currentLine) + charWidth;
-                
-                if (testWidth > maxWidth && currentLine) {
-                    // Se o próximo item é um emoji customizado que ultrapassaria o limite
-                    // e a linha atual não está vazia, quebra a linha
-                    if (emojiMatch && emojiMatch[0].includes(':')) {
+        for (const explicitLine of explicitLines) {
+            if (maxWidth) {
+                // Com maxWidth, sempre quebrar linhas que excedam o limite
+                if (wrap) {
+                    // Com wrap, quebrar por palavras
+                    const words = explicitLine.split(' ');
+                    let currentLine = '';
+                    
+                    for (const word of words) {
+                        const testLine = currentLine ? `${currentLine} ${word}` : word;
+                        const testWidth = measureMixedText(testLine);
+                        
+                        if (testWidth > maxWidth && currentLine) {
+                            lines.push(currentLine);
+                            currentLine = word;
+                        } else {
+                            currentLine = testLine;
+                        }
+                    }
+                    
+                    if (currentLine) {
                         lines.push(currentLine);
-                        currentLine = nextChar;
-                    } else {
-                        lines.push(currentLine);
-                        currentLine = nextChar;
                     }
                 } else {
-                    currentLine += nextChar;
+                    // Sem wrap, quebrar caractere por caractere quando necessário
+                    let currentLine = '';
+                    
+                    for (let i = 0; i < explicitLine.length; i++) {
+                        const testLine = currentLine + explicitLine[i];
+                        const testWidth = measureMixedText(testLine);
+                        
+                        if (testWidth > maxWidth && currentLine) {
+                            lines.push(currentLine);
+                            currentLine = explicitLine[i];
+                        } else {
+                            currentLine = testLine;
+                        }
+                    }
+                    
+                    if (currentLine) {
+                        lines.push(currentLine);
+                    }
                 }
-            }
-            
-            if (currentLine) {
-                lines.push(currentLine);
+            } else {
+                // Sem maxWidth, apenas adicionar a linha como está
+                lines.push(explicitLine);
             }
         }
-        
-        return lines;
-    };
-
-    // Split text into lines using enhanced breaking
-    const lines = breakTextIntoLines(text);
+    } else {
+        // Sem multiline, mas com maxWidth sempre criar nova linha quando necessário
+        if (maxWidth) {
+            if (wrap) {
+                // Com wrap, quebrar por palavras
+                const words = text.split(' ');
+                let currentLine = '';
+                
+                for (const word of words) {
+                    const testLine = currentLine ? `${currentLine} ${word}` : word;
+                    const testWidth = measureMixedText(testLine);
+                    
+                    if (testWidth > maxWidth && currentLine) {
+                        lines.push(currentLine);
+                        currentLine = word;
+                    } else {
+                        currentLine = testLine;
+                    }
+                }
+                
+                if (currentLine) {
+                    lines.push(currentLine);
+                }
+            } else {
+                // Sem wrap, quebrar caractere por caractere quando necessário
+                let currentLine = '';
+                
+                for (let i = 0; i < text.length; i++) {
+                    const testLine = currentLine + text[i];
+                    const testWidth = measureMixedText(testLine);
+                    
+                    if (testWidth > maxWidth && currentLine) {
+                        lines.push(currentLine);
+                        currentLine = text[i];
+                    } else {
+                        currentLine = testLine;
+                    }
+                }
+                
+                if (currentLine) {
+                    lines.push(currentLine);
+                }
+            }
+        } else {
+            // Sem maxWidth nem multiline - uma linha apenas
+            lines = [text];
+        }
+    }
 
     // Helper function to draw mixed text and emojis for a single line
     const drawMixedLine = async (lineText, lineX, lineY) => {
@@ -276,16 +276,14 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
             let url;
             if (id) {
                 // Discord custom emoji
-                const ext = 'png';
+                const ext = full.startsWith('<a:') ? 'gif' : 'png';
                 url = `https://cdn.discordapp.com/emojis/${id}.${ext}`;
-                console.log(`debug #1`, url)
             } else if (unicode) {
                 // Unicode emoji - use Twemoji API
                 const codepoint = Array.from(unicode)
                     .map(c => c.codePointAt(0).toString(16))
                     .join('-');
                 url = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${codepoint}.png`;
-                console.log(`debug #2`, url)
             }
 
             if (url) {
