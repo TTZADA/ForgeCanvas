@@ -139,8 +139,8 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
 
     // Create combined regex for Discord emojis and Unicode emojis
     const createCombinedRegex = () => {
-        const discordEmojiPattern = '/<a?:(\w+):(\d+)>/gu';
-        const unicodeEmojiPattern = emojiRegex();
+        const discordEmojiPattern = '<a?:(\\w+):(\\d+)>';
+        const unicodeEmojiPattern = emojiRegex().source;
         return new RegExp(`${discordEmojiPattern}|${unicodeEmojiPattern}`, 'gu');
     };
 
