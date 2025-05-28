@@ -433,7 +433,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                 
                 if (codepoints.length > 0) {
                     const codepointStr = codepoints.join('-');
-                    url = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${codepointStr}.png`;
+                    url = `https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/${codepointStr}.png`;
                     fallbackText = unicodeEmoji;
                 } else {
                     shouldTryLoad = false;
