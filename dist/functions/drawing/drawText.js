@@ -136,14 +136,9 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         }
     };
 
-    // Create combined regex for Discord emojis and Unicode emojis
-    const createCombinedRegex = () => {
-        return /<a?:(\w+):(\d+)>|((?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\u200D(?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?))*)|\d\uFE0F\u20E3)/gu;
-    };
-
     // Helper function to measure text width including emojis
     const measureMixedText = (text) => {
-        const regex = createCombinedRegex();
+        const regex = /<a?:(\w+):(\d+)>|((?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\u200D(?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?))*)|\d\uFE0F\u20E3)/gu;
         let width = 0;
         let lastIndex = 0;
         let match;
@@ -327,7 +322,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
     const breakLineByCharacters = (text, maxWidth) => {
         const lines = [];
         let currentLine = '';
-        const regex = createCombinedRegex();
+        const regex = /<a?:(\w+):(\d+)>|((?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\u200D(?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?))*)|\d\uFE0F\u20E3)/gu;
         let lastIndex = 0;
         let match;
         
@@ -388,7 +383,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
 
     // Helper function to draw mixed text and emojis for a single line
     const drawMixedLine = async (lineText, lineX, lineY) => {
-        const regex = createCombinedRegex();
+        const regex = /<a?:(\w+):(\d+)>|((?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\u200D(?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?))*)|\d\uFE0F\u20E3)/gu;
         let cursorX = lineX;
         let lastIndex = 0;
         let match;
