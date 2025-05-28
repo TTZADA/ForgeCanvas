@@ -139,12 +139,16 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         }
     };
 
+    // Create combined regex for Discord emojis and Unicode emojis
+    const createCombinedRegex = () => {
+        const discordEmojiPattern = '<a?:(\\w+):(\\d+)>';
+        const unicodeEmojiPattern = emojiRe.source;
+        return new RegExp(`(${discordEmojiPattern})|(${unicodeEmojiPattern})`, 'gu');
+    };
+
     // Helper function to measure text width including emojis
     const measureMixedText = (text) => {
-        const regex = new RegExp(
-           `<a?:(\\w+):(\\d+)>|(${emojiRe.source})`,
-           'gu'
-       );
+        const regex = createCombinedRegex();
         let width = 0;
         let lastIndex = 0;
         let match;
@@ -328,7 +332,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
     const breakLineByCharacters = (text, maxWidth) => {
         const lines = [];
         let currentLine = '';
-        const regex = /<a?:\w+:\d+>/g;
+        const regex = createCombinedRegex();
         let lastIndex = 0;
         let match;
         
@@ -389,16 +393,13 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
 
     // Helper function to draw mixed text and emojis for a single line
     const drawMixedLine = async (lineText, lineX, lineY) => {
-        const regex = new RegExp(
-           `<a?:(\\w+):(\\d+)>|(${emojiRe.source})`,
-           'gu'
-       );
+        const regex = createCombinedRegex();
         let cursorX = lineX;
         let lastIndex = 0;
         let match;
 
         while ((match = regex.exec(lineText))) {
-            const [full, name, id, unicode] = match;
+            const [fullMatch, discordEmoji, emojiName, emojiId, unicodeEmoji] = match;
             
             // Draw preceding text
             if (match.index > lastIndex) {
@@ -416,15 +417,17 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
             // Resolve and draw emoji
             let url;
             let shouldTryLoad = true;
+            let fallbackText = fullMatch;
             
-            if (id) {
+            if (discordEmoji && emojiId) {
                 // Discord custom emoji
-                const ext = full.startsWith('<a:') ? 'gif' : 'png';
-                url = `https://cdn.discordapp.com/emojis/${id}.${ext}`;
-            } else if (unicode) {
+                const ext = discordEmoji.startsWith('<a:') ? 'gif' : 'png';
+                url = `https://cdn.discordapp.com/emojis/${emojiId}.${ext}`;
+                fallbackText = emojiName || fullMatch;
+            } else if (unicodeEmoji) {
                 // Unicode emoji - use Twemoji API with better codepoint handling
                 const codepoints = [];
-                for (const char of unicode) {
+                for (const char of unicodeEmoji) {
                     const code = char.codePointAt(0);
                     if (code) {
                         codepoints.push(code.toString(16));
@@ -434,6 +437,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                 if (codepoints.length > 0) {
                     const codepointStr = codepoints.join('-');
                     url = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${codepointStr}.png`;
+                    fallbackText = unicodeEmoji;
                 } else {
                     shouldTryLoad = false;
                 }
@@ -458,7 +462,6 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                         );
                     } else {
                         // URL doesn't exist, render as text fallback
-                        const fallbackText = name || unicode || full;
                         if (mode === __1.FillOrStroke.fill) {
                             canvas.ctx.fillText(fallbackText, cursorX, lineY);
                         } else {
@@ -469,7 +472,6 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                 } catch (error) {
                     // If emoji fails to load, render as text fallback
                     console.warn(`Failed to load emoji: ${url}`, error);
-                    const fallbackText = name || unicode || full;
                     if (mode === __1.FillOrStroke.fill) {
                         canvas.ctx.fillText(fallbackText, cursorX, lineY);
                     } else {
@@ -479,7 +481,6 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                 }
             } else {
                 // No valid URL, render as text
-                const fallbackText = name || unicode || full;
                 if (mode === __1.FillOrStroke.fill) {
                     canvas.ctx.fillText(fallbackText, cursorX, lineY);
                 } else {
