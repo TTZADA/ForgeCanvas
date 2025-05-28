@@ -2,6 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const forgescript_1 = require("@tryforge/forgescript");
 const __1 = require("../..");
+const emojiRegex = require("emoji-regex");
+
+const emojiRe = emojiRegex();
 
 exports.default = new forgescript_1.NativeFunction({
     name: '$drawText',
@@ -138,7 +141,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
 
     // Helper function to measure text width including emojis
     const measureMixedText = (text) => {
-        const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\p{Emoji}\uFE0F]+)/gu;
+        const regex = /<a?:(\w+):(\d+)>|(${emojiRe.source})/gu;
         let width = 0;
         let lastIndex = 0;
         let match;
@@ -383,7 +386,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
 
     // Helper function to draw mixed text and emojis for a single line
     const drawMixedLine = async (lineText, lineX, lineY) => {
-        const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\p{Emoji}\uFE0F]+)/gu;
+        const regex = /<a?:(\w+):(\d+)>|(${emojiRe.source})/gu;
         let cursorX = lineX;
         let lastIndex = 0;
         let match;
