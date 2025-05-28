@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const forgescript_1 = require("@tryforge/forgescript");
 const __1 = require("../..");
-const emojiRegex = require("emoji-regex");
 
 exports.default = new forgescript_1.NativeFunction({
     name: '$drawText',
@@ -139,9 +138,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
 
     // Create combined regex for Discord emojis and Unicode emojis
     const createCombinedRegex = () => {
-        const discordEmojiPattern = '<a?:(\\w+):(\\d+)>';
-        const unicodeEmojiPattern = emojiRegex().source;
-        return new RegExp(`${discordEmojiPattern}|${unicodeEmojiPattern}`, 'gu');
+        return /<a?:(\w+):(\d+)>|((?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\u200D(?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?))*)|\d\uFE0F\u20E3)/gu;
     };
 
     // Helper function to measure text width including emojis
