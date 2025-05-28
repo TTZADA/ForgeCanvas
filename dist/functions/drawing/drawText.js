@@ -286,7 +286,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     cursorX += size;
                 } catch (error) {
                     // If emoji fails to load, skip it and continue
-                    console.warn(Failed to load emoji: ${url}, error);
+                    console.warn(`Failed to load emoji: ${url}`, error);
                 }
             }
 
