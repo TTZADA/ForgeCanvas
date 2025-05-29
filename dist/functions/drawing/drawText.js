@@ -424,6 +424,17 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         return lines.length > 0 ? lines : [''];
     };
 
+    // Função para obter URL do emoji usando cache
+    const getEmojiUrlCached = (emojiChar) => {
+        if (emojiUrlCache.has(emojiChar)) {
+            return emojiUrlCache.get(emojiChar);
+        }
+        
+        const url = getEmojiUrl(emojiChar);
+        emojiUrlCache.set(emojiChar, url);
+        return url;
+    };
+
     // Função principal para desenhar uma linha com emojis e texto
     const drawMixedLine = async (lineText, lineX, lineY) => {
         const tokens = tokenizeText(lineText);
@@ -443,8 +454,8 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     url = `https://cdn.discordapp.com/emojis/${emojiId}.${ext}`;
                     fallbackText = `:${emojiName}:`;
                 } else {
-                    // Emoji Unicode
-                    url = getEmojiUrl(emojiContent);
+                    // Emoji Unicode - usa o próprio emoji para getEmojiUrl
+                    url = getEmojiUrlCached(emojiContent);
                     fallbackText = emojiContent;
                 }
 
