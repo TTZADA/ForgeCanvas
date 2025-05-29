@@ -136,157 +136,108 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
 
     // Determine emoji draw size
     const size = emojiSize || parseInt(canvas.ctx.font) || 16;
-    const actualLineOffset = lineOffset || size * 1.2;
+    const actualLineOffset = lineOffset || size * 1.2; // Default line spacing
 
-    // Caches
-    const urlCache = new Map();
-    const emojiUrlCache = new Map();
-    
-    // Helper function to check if URL exists (with cache)
-    const checkUrl = async (url) => {
-        if (urlCache.has(url)) {
-            return urlCache.get(url);
+    // Regex para capturar emojis Discord e Unicode
+    const emojiRegex = /<a?:(\w+):(\d+)>|(?:(?!\p{Emoji_Modifier})\p{Extended_Pictographic}(?:\u200D(?!\p{Emoji_Modifier})\p{Extended_Pictographic})*|\p{Regional_Indicator}{2}|\d\uFE0F\u20E3|[#*]\uFE0F\u20E3)/gu;
+
+    // ETAPA 1: COLETAR TODOS OS EMOJIS DO TEXTO COMPLETO
+    const collectAllEmojis = (inputText) => {
+        const emojiMap = new Map();
+        let match;
+        emojiRegex.lastIndex = 0;
+        
+        while ((match = emojiRegex.exec(inputText))) {
+            const emojiText = match[0];
+            if (!emojiMap.has(emojiText)) {
+                emojiMap.set(emojiText, null); // Será preenchido com a URL processada
+            }
         }
         
-        try {
-            const response = await fetch(url, { method: 'HEAD' });
-            const exists = response.ok;
-            urlCache.set(url, exists);
-            return exists;
-        } catch (error) {
-            urlCache.set(url, false);
-            return false;
-        }
+        return emojiMap;
     };
 
-    // FUNÇÃO DE TOKENIZAÇÃO CORRIGIDA
+    // ETAPA 2: PROCESSAR TODOS OS EMOJIS COLETADOS
+    const processCollectedEmojis = async (emojiMap) => {
+        const processedEmojis = new Map();
+        
+        // Processa cada emoji único encontrado
+        for (const [emojiText] of emojiMap) {
+            let url = null;
+            let fallbackText = emojiText;
+            let isDiscordEmoji = false;
+            
+            // Verifica se é emoji do Discord
+            const discordMatch = emojiText.match(/<a?:(\w+):(\d+)>/);
+            if (discordMatch) {
+                const [, emojiName, emojiId] = discordMatch;
+                const ext = emojiText.startsWith('<a:') ? 'gif' : 'png';
+                url = `https://cdn.discordapp.com/emojis/${emojiId}.${ext}`;
+                fallbackText = emojiName;
+                isDiscordEmoji = true;
+            } else {
+                // Para emojis Unicode, usa getEmojiUrl com o emoji INTEIRO
+                url = getEmojiUrl(emojiText);
+            }
+            
+            // Tenta carregar a imagem se há URL
+            let loadedImage = null;
+            if (url) {
+                try {
+                    const response = await fetch(url, { method: 'HEAD' });
+                    if (response.ok) {
+                        const img = await __1.CanvasUtil.resolveImage(this, ctx, url);
+                        if (!(img instanceof forgescript_1.Return)) {
+                            loadedImage = img;
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`Failed to load emoji: ${url}`, error);
+                }
+            }
+            
+            processedEmojis.set(emojiText, {
+                url,
+                image: loadedImage,
+                fallbackText,
+                isDiscordEmoji
+            });
+        }
+        
+        return processedEmojis;
+    };
+
+    // Coleta todos os emojis do texto
+    const emojiMap = collectAllEmojis(text);
+    
+    // Processa todos os emojis coletados
+    const processedEmojis = await processCollectedEmojis(emojiMap);
+
+    // Função para tokenizar o texto separando emojis de texto normal
     const tokenizeText = (inputText) => {
         const tokens = [];
-        let workingText = inputText;
-        
-        // Primeiro: encontra todos os emojis customizados do Discord
-        const discordEmojiMatches = [];
-        const discordEmojiRegex = /<a?:(\w+):(\d+)>/g;
+        let lastIndex = 0;
         let match;
         
-        while ((match = discordEmojiRegex.exec(inputText)) !== null) {
-            discordEmojiMatches.push({
-                match: match[0],
-                start: match.index,
-                end: match.index + match[0].length,
-                name: match[1],
-                id: match[2],
-                animated: match[0].startsWith('<a:')
-            });
-        }
+        emojiRegex.lastIndex = 0;
         
-        // Ordena por posição
-        discordEmojiMatches.sort((a, b) => a.start - b.start);
-        
-        // Processa texto sequencialmente
-        let currentPos = 0;
-        
-        for (const discordEmoji of discordEmojiMatches) {
-            // Adiciona texto antes do emoji do Discord
-            if (currentPos < discordEmoji.start) {
-                const textBefore = inputText.slice(currentPos, discordEmoji.start);
-                if (textBefore) {
-                    // Processa emojis Unicode neste texto
-                    const unicodeTokens = parseUnicodeEmojis(textBefore);
-                    tokens.push(...unicodeTokens);
+        while ((match = emojiRegex.exec(inputText))) {
+            if (match.index > lastIndex) {
+                const textSegment = inputText.slice(lastIndex, match.index);
+                if (textSegment) {
+                    tokens.push({ type: 'text', content: textSegment });
                 }
             }
             
-            // Adiciona o emoji customizado do Discord
-            tokens.push({
-                type: 'emoji',
-                content: discordEmoji.match,
-                isUnicode: false,
-                name: discordEmoji.name,
-                id: discordEmoji.id,
-                animated: discordEmoji.animated
-            });
-            
-            currentPos = discordEmoji.end;
+            tokens.push({ type: 'emoji', content: match[0] });
+            lastIndex = emojiRegex.lastIndex;
         }
         
-        // Processa texto restante
-        if (currentPos < inputText.length) {
-            const remainingText = inputText.slice(currentPos);
-            if (remainingText) {
-                const unicodeTokens = parseUnicodeEmojis(remainingText);
-                tokens.push(...unicodeTokens);
+        if (lastIndex < inputText.length) {
+            const remaining = inputText.slice(lastIndex);
+            if (remaining) {
+                tokens.push({ type: 'text', content: remaining });
             }
-        }
-        
-        // Se não há emojis customizados, processa apenas Unicode
-        if (discordEmojiMatches.length === 0) {
-            return parseUnicodeEmojis(inputText);
-        }
-        
-        return tokens;
-    };
-
-    // Função para processar emojis Unicode - Versão mais robusta
-    const parseUnicodeEmojis = (text) => {
-        const tokens = [];
-        
-        // Se não há texto, retorna vazio
-        if (!text) return tokens;
-        
-        // Abordagem char-by-char para máxima precisão
-        let i = 0;
-        let currentTextChunk = '';
-        
-        while (i < text.length) {
-            let foundEmoji = false;
-            
-            // Testa diferentes tamanhos de sequência para encontrar emojis
-            // Emojis podem ter 1-14 caracteres (incluindo modificadores e ZWJ)
-            for (let len = Math.min(14, text.length - i); len >= 1; len--) {
-                const substr = text.slice(i, i + len);
-                
-                // Testa se esta substring é um emoji
-                let isEmoji = false;
-                twemoji.parse(substr, {
-                    callback: () => {
-                        isEmoji = true;
-                        return '';
-                    }
-                });
-                
-                if (isEmoji && len > 1) { 
-                    // Encontrou um emoji válido
-                    
-                    // Adiciona texto acumulado antes
-                    if (currentTextChunk) {
-                        tokens.push({ type: 'text', content: currentTextChunk });
-                        currentTextChunk = '';
-                    }
-                    
-                    // Adiciona o emoji
-                    tokens.push({
-                        type: 'emoji',
-                        content: substr,
-                        isUnicode: true
-                    });
-                    
-                    i += len;
-                    foundEmoji = true;
-                    break;
-                }
-            }
-            
-            if (!foundEmoji) {
-                // Não é emoji, adiciona ao chunk de texto
-                currentTextChunk += text[i];
-                i++;
-            }
-        }
-        
-        // Adiciona texto restante
-        if (currentTextChunk) {
-            tokens.push({ type: 'text', content: currentTextChunk });
         }
         
         return tokens;
@@ -301,108 +252,145 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         }
     };
 
-    // Função para medir largura total de tokens
+    // Função para medir largura de uma array de tokens
     const measureTokens = (tokens) => {
         return tokens.reduce((total, token) => total + measureToken(token), 0);
     };
 
-    // Função para converter tokens para string (para debug)
+    // Função para converter tokens para string
     const tokensToString = (tokens) => {
         return tokens.map(token => token.content).join('');
     };
 
-    // Função para quebrar linhas
+    // Função melhorada para quebrar linhas respeitando wrap
     const breakIntoLines = (inputText) => {
-        if (!maxWidth) {
-            return multiline ? inputText.split('\n') : [inputText];
-        }
+        try {
+            if (!maxWidth) {
+                return [inputText];
+            }
 
-        const lines = [];
-        const explicitLines = multiline ? inputText.split('\n') : [inputText];
-        
-        for (const explicitLine of explicitLines) {
-            const tokens = tokenizeText(explicitLine);
-            const totalWidth = measureTokens(tokens);
+            const lines = [];
+            const explicitLines = multiline ? inputText.split('\n') : [inputText];
             
-            if (totalWidth <= maxWidth) {
-                lines.push(explicitLine);
-                continue;
+            for (const explicitLine of explicitLines) {
+                const tokens = tokenizeText(explicitLine);
+                
+                if (tokens.length === 0) {
+                    lines.push('');
+                    continue;
+                }
+                
+                const totalWidth = measureTokens(tokens);
+                
+                if (totalWidth <= maxWidth) {
+                    lines.push(explicitLine);
+                    continue;
+                }
+                
+                // Precisa quebrar a linha
+                if (wrap) {
+                    // Quebra por palavras, respeitando emojis
+                    const processedLines = wrapByWords(tokens);
+                    lines.push(...processedLines);
+                } else {
+                    // Quebra forçada por caracteres
+                    const processedLines = wrapByCharacters(tokens);
+                    lines.push(...processedLines);
+                }
             }
             
-            // Precisa quebrar a linha
-            if (wrap) {
-                lines.push(...wrapByWords(tokens));
-            } else {
-                lines.push(...wrapByCharacters(tokens));
-            }
+            return lines.length > 0 ? lines : [inputText];
+            
+        } catch (error) {
+            console.warn('Error in breakIntoLines:', error);
+            return [inputText];
         }
-        
-        return lines.length > 0 ? lines : [inputText];
     };
 
-    // Função para quebrar por palavras (simplificada)
+    // Função para quebrar por palavras (wrap = true)
     const wrapByWords = (tokens) => {
         const lines = [];
-        let currentLine = [];
+        let currentTokens = [];
         let currentWidth = 0;
         
-        for (const token of tokens) {
-            const tokenWidth = measureToken(token);
+        // Agrupa tokens em "palavras" (sequências separadas por espaços)
+        const words = groupTokensIntoWords(tokens);
+        
+        for (const word of words) {
+            const wordWidth = measureTokens(word);
             
-            if (currentWidth + tokenWidth <= maxWidth) {
-                currentLine.push(token);
-                currentWidth += tokenWidth;
+            // Se a palavra cabe na linha atual
+            if (currentWidth + wordWidth <= maxWidth) {
+                currentTokens.push(...word);
+                currentWidth += wordWidth;
             } else {
-                // Finaliza linha atual
-                if (currentLine.length > 0) {
-                    lines.push(tokensToString(currentLine));
-                    currentLine = [];
+                // Palavra não cabe
+                if (currentTokens.length > 0) {
+                    // Finaliza linha atual
+                    lines.push(tokensToString(currentTokens));
+                    currentTokens = [];
                     currentWidth = 0;
                 }
                 
-                // Adiciona token à nova linha
-                currentLine.push(token);
-                currentWidth = tokenWidth;
+                // Se a palavra é muito grande para caber sozinha
+                if (wordWidth > maxWidth) {
+                    const brokenLines = forceBreakWord(word);
+                    lines.push(...brokenLines.slice(0, -1));
+                    
+                    const lastLine = brokenLines[brokenLines.length - 1];
+                    if (lastLine) {
+                        const lastTokens = tokenizeText(lastLine);
+                        currentTokens = lastTokens;
+                        currentWidth = measureTokens(lastTokens);
+                    }
+                } else {
+                    // Palavra cabe sozinha
+                    currentTokens = [...word];
+                    currentWidth = wordWidth;
+                }
             }
         }
         
-        if (currentLine.length > 0) {
-            lines.push(tokensToString(currentLine));
+        if (currentTokens.length > 0) {
+            lines.push(tokensToString(currentTokens));
         }
         
         return lines.length > 0 ? lines : [''];
     };
 
-    // Função para quebrar por caracteres (simplificada)
+    // Função para quebrar por caracteres (wrap = false)
     const wrapByCharacters = (tokens) => {
         const lines = [];
-        let currentLine = [];
+        let currentTokens = [];
         let currentWidth = 0;
         
         for (const token of tokens) {
+            const tokenWidth = measureToken(token);
+            
             if (token.type === 'emoji') {
-                if (currentWidth + size <= maxWidth) {
-                    currentLine.push(token);
-                    currentWidth += size;
+                // Emoji não pode ser quebrado
+                if (currentWidth + tokenWidth <= maxWidth) {
+                    currentTokens.push(token);
+                    currentWidth += tokenWidth;
                 } else {
-                    if (currentLine.length > 0) {
-                        lines.push(tokensToString(currentLine));
-                        currentLine = [];
+                    if (currentTokens.length > 0) {
+                        lines.push(tokensToString(currentTokens));
+                        currentTokens = [];
                         currentWidth = 0;
                     }
-                    currentLine.push(token);
-                    currentWidth = size;
+                    currentTokens.push(token);
+                    currentWidth = tokenWidth;
                 }
             } else {
-                // Para texto, quebra caractere por caractere se necessário
-                let remaining = token.content;
+                // Texto pode ser quebrado caractere por caractere
+                let remainingText = token.content;
                 
-                while (remaining.length > 0) {
+                while (remainingText.length > 0) {
                     let canFit = '';
                     let testWidth = currentWidth;
                     
-                    for (let i = 0; i < remaining.length; i++) {
-                        const char = remaining[i];
+                    for (let i = 0; i < remainingText.length; i++) {
+                        const char = remainingText[i];
                         const charWidth = canvas.ctx.measureText(char).width;
                         
                         if (testWidth + charWidth <= maxWidth) {
@@ -414,117 +402,200 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     }
                     
                     if (canFit.length > 0) {
-                        currentLine.push({ type: 'text', content: canFit });
-                        remaining = remaining.slice(canFit.length);
+                        currentTokens.push({ type: 'text', content: canFit });
+                        remainingText = remainingText.slice(canFit.length);
                         currentWidth = testWidth;
                     }
                     
-                    if (remaining.length > 0) {
-                        if (currentLine.length > 0) {
-                            lines.push(tokensToString(currentLine));
-                            currentLine = [];
+                    if (remainingText.length > 0) {
+                        if (currentTokens.length > 0) {
+                            lines.push(tokensToString(currentTokens));
+                            currentTokens = [];
                             currentWidth = 0;
                         }
                         
-                        // Força pelo menos um caractere
+                        // Força pelo menos um caractere se nada coube
                         if (canFit.length === 0) {
-                            lines.push(remaining[0]);
-                            remaining = remaining.slice(1);
+                            lines.push(remainingText[0]);
+                            remainingText = remainingText.slice(1);
                         }
                     }
                 }
             }
         }
         
-        if (currentLine.length > 0) {
-            lines.push(tokensToString(currentLine));
+        if (currentTokens.length > 0) {
+            lines.push(tokensToString(currentTokens));
         }
         
         return lines.length > 0 ? lines : [''];
     };
 
-    // Função para obter URL do emoji usando cache
-    const getEmojiUrlCached = (emojiChar) => {
-        if (emojiUrlCache.has(emojiChar)) {
-            return emojiUrlCache.get(emojiChar);
-        }
+    // Função para agrupar tokens em palavras
+    const groupTokensIntoWords = (tokens) => {
+        const words = [];
+        let currentWord = [];
         
-        const url = getEmojiUrl(emojiChar);
-        emojiUrlCache.set(emojiChar, url);
-        return url;
-    };
-
-    // Função principal para desenhar uma linha com emojis e texto
-    const drawMixedLine = async (lineText, lineX, lineY) => {
-        const tokens = tokenizeText(lineText);
-        let cursorX = lineX;
-
-        console.log(`Desenhando linha: "${lineText}"`);
-        console.log(`Tokens encontrados:`, tokens.map(t => ({ type: t.type, content: t.content })));
-
         for (const token of tokens) {
             if (token.type === 'emoji') {
-                let url = null;
-                let fallbackText = token.content;
+                currentWord.push(token);
+            } else {
+                // Divide texto por espaços, mantendo os espaços como separadores
+                const parts = token.content.split(/(\s+)/);
                 
-                try {
-                    if (!token.isUnicode) {
-                        // Emoji customizado do Discord
-                        const ext = token.animated ? 'gif' : 'png';
-                        url = `https://cdn.discordapp.com/emojis/${token.id}.${ext}`;
-                        fallbackText = `:${token.name}:`;
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    
+                    if (part.trim() === '') {
+                        // É um espaço - finaliza palavra atual se houver
+                        if (currentWord.length > 0) {
+                            words.push([...currentWord]);
+                            currentWord = [];
+                        }
+                        // Adiciona o espaço como uma "palavra" separada
+                        if (part) {
+                            words.push([{ type: 'text', content: part }]);
+                        }
                     } else {
-                        // Emoji Unicode
-                        url = getEmojiUrlCached(token.content);
-                        fallbackText = token.content;
+                        // É texto - adiciona à palavra atual
+                        currentWord.push({ type: 'text', content: part });
                     }
+                }
+            }
+        }
+        
+        if (currentWord.length > 0) {
+            words.push(currentWord);
+        }
+        
+        return words;
+    };
 
-                    if (url) {
-                        const urlExists = await checkUrl(url);
+    // Função para quebrar uma palavra muito grande forçadamente
+    const forceBreakWord = (wordTokens) => {
+        const lines = [];
+        let currentTokens = [];
+        let currentWidth = 0;
+        
+        for (const token of wordTokens) {
+            if (token.type === 'emoji') {
+                if (currentWidth + size <= maxWidth) {
+                    currentTokens.push(token);
+                    currentWidth += size;
+                } else {
+                    if (currentTokens.length > 0) {
+                        lines.push(tokensToString(currentTokens));
+                        currentTokens = [];
+                        currentWidth = 0;
+                    }
+                    currentTokens.push(token);
+                    currentWidth = size;
+                }
+            } else {
+                let remainingText = token.content;
+                
+                while (remainingText.length > 0) {
+                    let canFit = '';
+                    let testWidth = currentWidth;
+                    
+                    for (let i = 0; i < remainingText.length; i++) {
+                        const char = remainingText[i];
+                        const charWidth = canvas.ctx.measureText(char).width;
                         
-                        if (urlExists) {
-                            const img = await __1.CanvasUtil.resolveImage(this, ctx, url);
-                            if (img instanceof forgescript_1.Return) return img;
-                            
-                            // Desenha emoji como imagem
-                            canvas.ctx.drawImage(
-                                img,
-                                cursorX,
-                                lineY - size + (size * 0.2),
-                                size,
-                                size
-                            );
-                            cursorX += size;
-                            continue;
+                        if (testWidth + charWidth <= maxWidth) {
+                            canFit += char;
+                            testWidth += charWidth;
+                        } else {
+                            break;
                         }
                     }
-                } catch (error) {
-                    console.warn(`Erro ao carregar emoji: ${url}`, error);
+                    
+                    if (canFit.length > 0) {
+                        currentTokens.push({ type: 'text', content: canFit });
+                        remainingText = remainingText.slice(canFit.length);
+                        currentWidth = testWidth;
+                    }
+                    
+                    if (remainingText.length > 0) {
+                        if (currentTokens.length > 0) {
+                            lines.push(tokensToString(currentTokens));
+                            currentTokens = [];
+                            currentWidth = 0;
+                        }
+                        
+                        if (canFit.length === 0) {
+                            lines.push(remainingText[0]);
+                            remainingText = remainingText.slice(1);
+                        }
+                    }
                 }
-                
-                // Fallback: desenha como texto
-                if (mode === __1.FillOrStroke.fill) {
-                    canvas.ctx.fillText(fallbackText, cursorX, lineY);
+            }
+        }
+        
+        if (currentTokens.length > 0) {
+            lines.push(tokensToString(currentTokens));
+        }
+        
+        return lines.length > 0 ? lines : [''];
+    };
+
+    // Split text into lines using improved logic
+    const lines = breakIntoLines(text);
+
+    // ETAPA 3: DESENHAR COM EMOJIS PRÉ-PROCESSADOS
+    const drawMixedLine = async (lineText, lineX, lineY) => {
+        try {
+            const tokens = tokenizeText(lineText);
+            let cursorX = lineX;
+
+            // Percorre cada token da linha
+            for (const token of tokens) {
+                if (token.type === 'emoji') {
+                    const emojiText = token.content;
+                    const emojiData = processedEmojis.get(emojiText);
+                    
+                    if (emojiData && emojiData.image) {
+                        // Desenha a imagem do emoji já carregada
+                        canvas.ctx.drawImage(
+                            emojiData.image,
+                            cursorX,
+                            lineY - size + (size * 0.2),
+                            size,
+                            size
+                        );
+                        cursorX += size;
+                    } else {
+                        // Fallback: desenha como texto
+                        const fallbackText = emojiData ? emojiData.fallbackText : emojiText;
+                        if (mode === __1.FillOrStroke.fill) {
+                            canvas.ctx.fillText(fallbackText, cursorX, lineY);
+                        } else {
+                            canvas.ctx.strokeText(fallbackText, cursorX, lineY);
+                        }
+                        cursorX += canvas.ctx.measureText(fallbackText).width;
+                    }
                 } else {
-                    canvas.ctx.strokeText(fallbackText, cursorX, lineY);
+                    // Token de texto normal
+                    if (mode === __1.FillOrStroke.fill) {
+                        canvas.ctx.fillText(token.content, cursorX, lineY);
+                    } else {
+                        canvas.ctx.strokeText(token.content, cursorX, lineY);
+                    }
+                    cursorX += canvas.ctx.measureText(token.content).width;
                 }
-                cursorX += canvas.ctx.measureText(fallbackText).width;
-                
+            }
+        } catch (error) {
+            console.warn('Error in drawMixedLine:', error);
+            // Fallback: desenha a linha inteira como texto
+            if (mode === __1.FillOrStroke.fill) {
+                canvas.ctx.fillText(lineText, lineX, lineY);
             } else {
-                // Token de texto normal  
-                if (mode === __1.FillOrStroke.fill) {
-                    canvas.ctx.fillText(token.content, cursorX, lineY);
-                } else {
-                    canvas.ctx.strokeText(token.content, cursorX, lineY);
-                }
-                cursorX += canvas.ctx.measureText(token.content).width;
+                canvas.ctx.strokeText(lineText, lineX, lineY);
             }
         }
     };
 
-    // Quebra o texto em linhas e desenha
-    const lines = breakIntoLines(text);
-
+    // Draw each line
     try {
         for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
             const lineText = lines[lineIndex];
@@ -533,8 +604,8 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
             await drawMixedLine(lineText, x, lineY);
         }
     } catch (error) {
-        console.error('Erro ao desenhar linhas:', error);
-        // Fallback: desenha o texto original
+        console.warn('Error drawing lines:', error);
+        // Fallback final: desenha o texto original
         if (mode === __1.FillOrStroke.fill) {
             canvas.ctx.fillText(text, x, y);
         } else {
@@ -546,4 +617,4 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
     canvas.ctx[styleProp] = prevStyle;
     return this.success();
 }
-});
+})
