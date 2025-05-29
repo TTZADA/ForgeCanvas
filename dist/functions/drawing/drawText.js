@@ -159,48 +159,106 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         }
     };
 
-    // Função melhorada para obter URL do emoji usando getEmojiUrl
-    const getEmojiUrlCached = (emojiText) => {
-        if (emojiUrlCache.has(emojiText)) {
-            return emojiUrlCache.get(emojiText);
+    // Função para obter URL do emoji usando getEmojiUrl diretamente no emoji
+    const getEmojiUrlCached = (emojiChar) => {
+        if (emojiUrlCache.has(emojiChar)) {
+            return emojiUrlCache.get(emojiChar);
         }
         
-        const url = getEmojiUrl(emojiText);
-        emojiUrlCache.set(emojiText, url);
+        const url = getEmojiUrl(emojiChar);
+        emojiUrlCache.set(emojiChar, url);
         return url;
     };
 
-    // Regex para capturar emojis Discord e Unicode
-    const emojiRegex = /<a?:(\w+):(\d+)>|(?:(?!\p{Emoji_Modifier})\p{Extended_Pictographic}(?:\u200D(?!\p{Emoji_Modifier})\p{Extended_Pictographic})*|\p{Regional_Indicator}{2}|\d\uFE0F\u20E3|[#*]\uFE0F\u20E3)/gu;
-
-    // Função para tokenizar o texto separando emojis de texto normal
+    // Função para tokenizar o texto usando twemoji.parse para detectar emojis
     const tokenizeText = (inputText) => {
         const tokens = [];
         let lastIndex = 0;
-        let match;
-        
-        emojiRegex.lastIndex = 0;
-        
-        while ((match = emojiRegex.exec(inputText))) {
-            if (match.index > lastIndex) {
-                const textSegment = inputText.slice(lastIndex, match.index);
-                if (textSegment) {
-                    tokens.push({ type: 'text', content: textSegment });
+
+        // Usa twemoji.parse para encontrar emojis Unicode
+        twemoji.parse(inputText, {
+            callback: (icon, options, variant) => {
+                // Adiciona texto antes do emoji
+                if (options.startIndex > lastIndex) {
+                    const textBefore = inputText.slice(lastIndex, options.startIndex);
+                    if (textBefore) {
+                        tokens.push({ type: 'text', content: textBefore });
+                    }
                 }
+                
+                // Adiciona o emoji
+                const emojiChar = inputText.slice(options.startIndex, options.endIndex);
+                tokens.push({ type: 'emoji', content: emojiChar });
+                
+                lastIndex = options.endIndex;
+                return '';
+            },
+            // Regex para também capturar emojis do Discord
+            base: 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/'
+        });
+
+        // Agora processa emojis do Discord no texto restante
+        let remainingText = inputText;
+        const processedTokens = [];
+        let textIndex = 0;
+
+        for (const token of tokens) {
+            if (token.type === 'text') {
+                // Processa texto em busca de emojis do Discord
+                const discordTokens = tokenizeDiscordEmojis(token.content);
+                processedTokens.push(...discordTokens);
+            } else {
+                processedTokens.push(token);
             }
-            
-            tokens.push({ type: 'emoji', content: match[0] });
-            lastIndex = emojiRegex.lastIndex;
         }
-        
+
+        // Se não houve emojis Unicode, processa todo o texto para Discord
+        if (tokens.length === 0 || tokens.every(t => t.type === 'text')) {
+            return tokenizeDiscordEmojis(inputText);
+        }
+
+        // Adiciona texto restante se houver
         if (lastIndex < inputText.length) {
             const remaining = inputText.slice(lastIndex);
+            if (remaining) {
+                const discordTokens = tokenizeDiscordEmojis(remaining);
+                processedTokens.push(...discordTokens);
+            }
+        }
+
+        return processedTokens.length > 0 ? processedTokens : [{ type: 'text', content: inputText }];
+    };
+
+    // Função auxiliar para tokenizar emojis do Discord
+    const tokenizeDiscordEmojis = (text) => {
+        const tokens = [];
+        const discordEmojiRegex = /<a?:(\w+):(\d+)>/g;
+        let lastIndex = 0;
+        let match;
+
+        while ((match = discordEmojiRegex.exec(text)) !== null) {
+            // Adiciona texto antes do emoji do Discord
+            if (match.index > lastIndex) {
+                const textBefore = text.slice(lastIndex, match.index);
+                if (textBefore) {
+                    tokens.push({ type: 'text', content: textBefore });
+                }
+            }
+
+            // Adiciona emoji do Discord
+            tokens.push({ type: 'emoji', content: match[0] });
+            lastIndex = match.index + match[0].length;
+        }
+
+        // Adiciona texto restante
+        if (lastIndex < text.length) {
+            const remaining = text.slice(lastIndex);
             if (remaining) {
                 tokens.push({ type: 'text', content: remaining });
             }
         }
-        
-        return tokens;
+
+        return tokens.length > 0 ? tokens : [{ type: 'text', content: text }];
     };
 
     // Função para medir largura de um token
@@ -510,22 +568,22 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
 
             for (const token of tokens) {
                 if (token.type === 'emoji') {
-                    const fullMatch = token.content;
+                    const emojiContent = token.content;
                     let url;
                     let shouldTryLoad = true;
-                    let fallbackText = fullMatch;
+                    let fallbackText = emojiContent;
                     
                     // Verifica se é emoji do Discord
-                    const discordMatch = fullMatch.match(/<a?:(\w+):(\d+)>/);
+                    const discordMatch = emojiContent.match(/<a?:(\w+):(\d+)>/);
                     if (discordMatch) {
                         const [, emojiName, emojiId] = discordMatch;
-                        const ext = fullMatch.startsWith('<a:') ? 'gif' : 'png';
+                        const ext = emojiContent.startsWith('<a:') ? 'gif' : 'png';
                         url = `https://cdn.discordapp.com/emojis/${emojiId}.${ext}`;
-                        fallbackText = emojiName || fullMatch;
+                        fallbackText = emojiName || emojiContent;
                     } else {
-                        // Para emojis Unicode, usa a função getEmojiUrl
-                        url = getEmojiUrlCached(fullMatch);
-                        fallbackText = fullMatch;
+                        // Para emojis Unicode, usa getEmojiUrl diretamente no emoji
+                        url = getEmojiUrlCached(emojiContent);
+                        fallbackText = emojiContent;
                         
                         // Se getEmojiUrl não retornou uma URL, não tenta carregar
                         if (!url) {
