@@ -3,6 +3,26 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const forgescript_1 = require("@tryforge/forgescript");
 const __1 = require("../..");
 
+const twemoji = require('@twemoji/api');
+
+function getEmojiUrl(text, options = {}) {
+  const baseUrl = options.baseUrl || 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/';
+  const ext = options.ext || '.png';
+
+  let firstUrl = null;
+
+  twemoji.parse(text, {
+    callback: (icon) => {
+      if (!firstUrl) {
+        firstUrl = `${baseUrl}${icon}${ext}`;
+      }
+      return '';
+    },
+  });
+
+  return firstUrl;
+}
+
 exports.default = new forgescript_1.NativeFunction({
     name: '$drawText',
     aliases: ['$placeText', '$text', '$writeText', '$addText'],
@@ -118,8 +138,11 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
     const size = emojiSize || parseInt(canvas.ctx.font) || 16;
     const actualLineOffset = lineOffset || size * 1.2; // Default line spacing
 
-    // Helper function to check if URL exists (with cache)
+    // Cache para URLs de emoji
     const urlCache = new Map();
+    const emojiUrlCache = new Map();
+    
+    // Helper function to check if URL exists (with cache)
     const checkUrl = async (url) => {
         if (urlCache.has(url)) {
             return urlCache.get(url);
@@ -134,6 +157,17 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
             urlCache.set(url, false);
             return false;
         }
+    };
+
+    // Função melhorada para obter URL do emoji usando getEmojiUrl
+    const getEmojiUrlCached = (emojiText) => {
+        if (emojiUrlCache.has(emojiText)) {
+            return emojiUrlCache.get(emojiText);
+        }
+        
+        const url = getEmojiUrl(emojiText);
+        emojiUrlCache.set(emojiText, url);
+        return url;
     };
 
     // Regex para capturar emojis Discord e Unicode
@@ -481,6 +515,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     let shouldTryLoad = true;
                     let fallbackText = fullMatch;
                     
+                    // Verifica se é emoji do Discord
                     const discordMatch = fullMatch.match(/<a?:(\w+):(\d+)>/);
                     if (discordMatch) {
                         const [, emojiName, emojiId] = discordMatch;
@@ -488,22 +523,12 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                         url = `https://cdn.discordapp.com/emojis/${emojiId}.${ext}`;
                         fallbackText = emojiName || fullMatch;
                     } else {
-                        const codepoints = [];
-                        for (let i = 0; i < fullMatch.length; i++) {
-                            const code = fullMatch.codePointAt(i);
-                            if (code) {
-                                codepoints.push(code.toString(16));
-                                if (code > 0xFFFF) {
-                                    i++;
-                                }
-                            }
-                        }
+                        // Para emojis Unicode, usa a função getEmojiUrl
+                        url = getEmojiUrlCached(fullMatch);
+                        fallbackText = fullMatch;
                         
-                        if (codepoints.length > 0) {
-                            const codepointStr = codepoints.join('-');
-                            url = `https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/${codepointStr}.png`;
-                            fallbackText = fullMatch;
-                        } else {
+                        // Se getEmojiUrl não retornou uma URL, não tenta carregar
+                        if (!url) {
                             shouldTryLoad = false;
                         }
                     }
@@ -524,6 +549,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                                     size
                                 );
                             } else {
+                                // URL não existe, desenha texto de fallback
                                 if (mode === __1.FillOrStroke.fill) {
                                     canvas.ctx.fillText(fallbackText, cursorX, lineY);
                                 } else {
@@ -533,6 +559,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                             cursorX += size;
                         } catch (error) {
                             console.warn(`Failed to load emoji: ${url}`, error);
+                            // Em caso de erro, desenha texto de fallback
                             if (mode === __1.FillOrStroke.fill) {
                                 canvas.ctx.fillText(fallbackText, cursorX, lineY);
                             } else {
@@ -541,6 +568,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                             cursorX += canvas.ctx.measureText(fallbackText).width;
                         }
                     } else {
+                        // Não é possível carregar como imagem, desenha como texto
                         if (mode === __1.FillOrStroke.fill) {
                             canvas.ctx.fillText(fallbackText, cursorX, lineY);
                         } else {
@@ -549,6 +577,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                         cursorX += canvas.ctx.measureText(fallbackText).width;
                     }
                 } else {
+                    // Token de texto normal
                     if (mode === __1.FillOrStroke.fill) {
                         canvas.ctx.fillText(token.content, cursorX, lineY);
                     } else {
@@ -559,6 +588,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
             }
         } catch (error) {
             console.warn('Error in drawMixedLine:', error);
+            // Fallback: desenha a linha inteira como texto
             if (mode === __1.FillOrStroke.fill) {
                 canvas.ctx.fillText(lineText, lineX, lineY);
             } else {
@@ -577,6 +607,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         }
     } catch (error) {
         console.warn('Error drawing lines:', error);
+        // Fallback final: desenha o texto original
         if (mode === __1.FillOrStroke.fill) {
             canvas.ctx.fillText(text, x, y);
         } else {
