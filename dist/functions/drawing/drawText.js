@@ -171,7 +171,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
     };
 
     // Regex para capturar emojis Discord e Unicode
-    const emojiRegex = /<a?:(\w+):(\d+)>|((?:\p{Extended_Pictographic}(?:\u200D(?:\p{Extended_Pictographic})?)*)|\d\uFE0F\u20E3)/gu;
+    const emojiRegex = /<a?:(\w+):(\d+)>|(?:(?!\p{Emoji_Modifier})\p{Extended_Pictographic}(?:\u200D(?!\p{Emoji_Modifier})\p{Extended_Pictographic})*|\p{Regional_Indicator}{2}|\d\uFE0F\u20E3|[#*]\uFE0F\u20E3)/gu;
 
     // Função para tokenizar o texto separando emojis de texto normal
     const tokenizeText = (inputText) => {
