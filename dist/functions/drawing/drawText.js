@@ -159,41 +159,94 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         }
     };
 
-    // FUNÇÃO PRINCIPAL DE TOKENIZAÇÃO - MAIS SIMPLES E ROBUSTA
+    // FUNÇÃO PRINCIPAL DE TOKENIZAÇÃO - CORRIGIDA E MELHORADA
     const tokenizeText = (inputText) => {
         const tokens = [];
         
-        // Regex combinado para capturar Discord emojis e Unicode emojis
-        const combinedRegex = /<a?:(\w+):(\d+)>|(?:(?!\p{Emoji_Modifier})\p{Extended_Pictographic}(?:\u200D(?!\p{Emoji_Modifier})\p{Extended_Pictographic})*|\p{Regional_Indicator}{2}|\d\uFE0F\u20E3|[#*]\uFE0F\u20E3)/gu;
-        
-        let lastIndex = 0;
+        // Primeiro passa: processa emojis do Discord
+        let processedText = inputText;
+        const discordEmojiRegex = /<a?:(\w+):(\d+)>/g;
+        const discordPlaceholders = [];
         let match;
         
-        while ((match = combinedRegex.exec(inputText)) !== null) {
-            // Adiciona texto antes do emoji
-            if (match.index > lastIndex) {
-                const textBefore = inputText.slice(lastIndex, match.index);
-                if (textBefore) {
-                    tokens.push({ type: 'text', content: textBefore });
-                }
-            }
-            
-            // Adiciona o emoji
-            tokens.push({ type: 'emoji', content: match[0] });
-            lastIndex = match.index + match[0].length;
+        // Substitui emojis do Discord por placeholders únicos
+        let placeholderIndex = 0;
+        while ((match = discordEmojiRegex.exec(inputText)) !== null) {
+            const placeholder = `__DISCORD_EMOJI_${placeholderIndex}__`;
+            discordPlaceholders.push({
+                placeholder: placeholder,
+                emoji: match[0]
+            });
+            processedText = processedText.replace(match[0], placeholder);
+            placeholderIndex++;
         }
+        
+        // Segunda passa: processa emojis Unicode usando twemoji
+        let lastIndex = 0;
+        
+        twemoji.parse(processedText, {
+            callback: (icon, options, variant) => {
+                // Adiciona texto antes do emoji
+                if (options.startIndex > lastIndex) {
+                    const textBefore = processedText.slice(lastIndex, options.startIndex);
+                    if (textBefore) {
+                        // Verifica se contém placeholders do Discord
+                        const textTokens = processDiscordPlaceholders(textBefore, discordPlaceholders);
+                        tokens.push(...textTokens);
+                    }
+                }
+                
+                // Adiciona o emoji Unicode
+                const emojiChar = processedText.slice(options.startIndex, options.endIndex);
+                tokens.push({ type: 'emoji', content: emojiChar, isUnicode: true });
+                
+                lastIndex = options.endIndex;
+                return '';
+            }
+        });
         
         // Adiciona texto restante
-        if (lastIndex < inputText.length) {
-            const remaining = inputText.slice(lastIndex);
+        if (lastIndex < processedText.length) {
+            const remaining = processedText.slice(lastIndex);
             if (remaining) {
-                tokens.push({ type: 'text', content: remaining });
+                const textTokens = processDiscordPlaceholders(remaining, discordPlaceholders);
+                tokens.push(...textTokens);
             }
         }
         
-        // Se não encontrou nenhum emoji, retorna o texto todo
+        // Se não encontrou nenhum emoji Unicode, processa todo o texto para Discord
         if (tokens.length === 0) {
-            return [{ type: 'text', content: inputText }];
+            const textTokens = processDiscordPlaceholders(processedText, discordPlaceholders);
+            return textTokens.length > 0 ? textTokens : [{ type: 'text', content: inputText }];
+        }
+        
+        return tokens;
+    };
+
+    // Função auxiliar para processar placeholders do Discord
+    const processDiscordPlaceholders = (text, discordPlaceholders) => {
+        if (!discordPlaceholders.length) {
+            return text ? [{ type: 'text', content: text }] : [];
+        }
+        
+        const tokens = [];
+        let remaining = text;
+        
+        for (const { placeholder, emoji } of discordPlaceholders) {
+            const parts = remaining.split(placeholder);
+            
+            if (parts.length > 1) {
+                // Encontrou o placeholder
+                if (parts[0]) {
+                    tokens.push({ type: 'text', content: parts[0] });
+                }
+                tokens.push({ type: 'emoji', content: emoji, isUnicode: false });
+                remaining = parts.slice(1).join(placeholder);
+            }
+        }
+        
+        if (remaining) {
+            tokens.push({ type: 'text', content: remaining });
         }
         
         return tokens;
@@ -447,15 +500,15 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                 let fallbackText = emojiContent;
                 
                 // Verifica se é emoji do Discord
-                const discordMatch = emojiContent.match(/<a?:(\w+):(\d+)>/);
-                if (discordMatch) {
+                if (!token.isUnicode && emojiContent.match(/<a?:(\w+):(\d+)>/)) {
+                    const discordMatch = emojiContent.match(/<a?:(\w+):(\d+)>/);
                     const [, emojiName, emojiId] = discordMatch;
                     const ext = emojiContent.startsWith('<a:') ? 'gif' : 'png';
                     url = `https://cdn.discordapp.com/emojis/${emojiId}.${ext}`;
                     fallbackText = `:${emojiName}:`;
                 } else {
-                    // Emoji Unicode - usa o próprio emoji para getEmojiUrl
-                    url = getEmojiUrl(emojiContent);
+                    // Emoji Unicode - usa o emoji inteiro para getEmojiUrl
+                    url = getEmojiUrlCached(emojiContent);
                     fallbackText = emojiContent;
                 }
 
