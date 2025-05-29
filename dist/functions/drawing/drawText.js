@@ -5,22 +5,34 @@ const __1 = require("../..");
 
 const twemoji = require('@twemoji/api');
 
-function getEmojiUrl(text, options = {}) {
+function getEmojiUrl(emojiChar, options = {}) {
   const baseUrl = options.baseUrl || 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/';
   const ext = options.ext || '.png';
 
-  let firstUrl = null;
-
-  twemoji.parse(text, {
-    callback: (icon) => {
-      if (!firstUrl) {
-        firstUrl = `${baseUrl}${icon}${ext}`;
-      }
-      return '';
-    },
+  // Converte o emoji para codepoints hexadecimais
+  const codePoints = [];
+  let i = 0;
+  while (i < emojiChar.length) {
+    const codePoint = emojiChar.codePointAt(i);
+    if (codePoint) {
+      codePoints.push(codePoint.toString(16));
+      i += codePoint > 0xFFFF ? 2 : 1;
+    } else {
+      i++;
+    }
+  }
+  
+  if (codePoints.length === 0) return null;
+  
+  // Remove variation selectors e outros modificadores desnecessários
+  const filteredCodePoints = codePoints.filter(cp => {
+    const code = parseInt(cp, 16);
+    // Remove variation selectors (FE00-FE0F) e alguns outros modificadores
+    return !(code >= 0xFE00 && code <= 0xFE0F);
   });
-
-  return firstUrl;
+  
+  const icon = filteredCodePoints.join('-').toLowerCase();
+  return `${baseUrl}${icon}${ext}`;
 }
 
 exports.default = new forgescript_1.NativeFunction({
@@ -159,7 +171,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         }
     };
 
-    // Função para obter URL do emoji usando getEmojiUrl diretamente no emoji
+    // Função para obter URL do emoji usando getEmojiUrl
     const getEmojiUrlCached = (emojiChar) => {
         if (emojiUrlCache.has(emojiChar)) {
             return emojiUrlCache.get(emojiChar);
@@ -170,63 +182,47 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         return url;
     };
 
-    // Função para tokenizar o texto usando twemoji.parse para detectar emojis
+    // Regex melhorado para capturar emojis Unicode completos
+    const emojiRegex = /(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F))*|\p{Emoji}(?:\p{Emoji_Modifier})?(?:\u200D\p{Emoji}(?:\p{Emoji_Modifier})?)*|[\u{1F1E6}-\u{1F1FF}]{2}/gu;
+
+    // Função para tokenizar o texto capturando emojis Unicode completos
     const tokenizeText = (inputText) => {
         const tokens = [];
         let lastIndex = 0;
 
-        // Usa twemoji.parse para encontrar emojis Unicode
-        twemoji.parse(inputText, {
-            callback: (icon, options, variant) => {
-                // Adiciona texto antes do emoji
-                if (options.startIndex > lastIndex) {
-                    const textBefore = inputText.slice(lastIndex, options.startIndex);
-                    if (textBefore) {
-                        tokens.push({ type: 'text', content: textBefore });
-                    }
+        // Primeiro processa emojis Unicode
+        let match;
+        while ((match = emojiRegex.exec(inputText)) !== null) {
+            // Adiciona texto antes do emoji
+            if (match.index > lastIndex) {
+                const textBefore = inputText.slice(lastIndex, match.index);
+                if (textBefore) {
+                    // Verifica se há emojis do Discord no texto antes
+                    const discordTokens = tokenizeDiscordEmojis(textBefore);
+                    tokens.push(...discordTokens);
                 }
-                
-                // Adiciona o emoji
-                const emojiChar = inputText.slice(options.startIndex, options.endIndex);
-                tokens.push({ type: 'emoji', content: emojiChar });
-                
-                lastIndex = options.endIndex;
-                return '';
-            },
-            // Regex para também capturar emojis do Discord
-            base: 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/'
-        });
-
-        // Agora processa emojis do Discord no texto restante
-        let remainingText = inputText;
-        const processedTokens = [];
-        let textIndex = 0;
-
-        for (const token of tokens) {
-            if (token.type === 'text') {
-                // Processa texto em busca de emojis do Discord
-                const discordTokens = tokenizeDiscordEmojis(token.content);
-                processedTokens.push(...discordTokens);
-            } else {
-                processedTokens.push(token);
             }
+            
+            // Adiciona o emoji Unicode
+            tokens.push({ type: 'emoji', content: match[0] });
+            lastIndex = match.index + match[0].length;
         }
 
-        // Se não houve emojis Unicode, processa todo o texto para Discord
-        if (tokens.length === 0 || tokens.every(t => t.type === 'text')) {
-            return tokenizeDiscordEmojis(inputText);
-        }
-
-        // Adiciona texto restante se houver
+        // Adiciona texto restante e processa emojis do Discord
         if (lastIndex < inputText.length) {
             const remaining = inputText.slice(lastIndex);
             if (remaining) {
                 const discordTokens = tokenizeDiscordEmojis(remaining);
-                processedTokens.push(...discordTokens);
+                tokens.push(...discordTokens);
             }
         }
 
-        return processedTokens.length > 0 ? processedTokens : [{ type: 'text', content: inputText }];
+        // Se não encontrou nenhum emoji Unicode, processa todo o texto para Discord
+        if (tokens.length === 0) {
+            return tokenizeDiscordEmojis(inputText);
+        }
+
+        return tokens.length > 0 ? tokens : [{ type: 'text', content: inputText }];
     };
 
     // Função auxiliar para tokenizar emojis do Discord
@@ -581,7 +577,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                         url = `https://cdn.discordapp.com/emojis/${emojiId}.${ext}`;
                         fallbackText = emojiName || emojiContent;
                     } else {
-                        // Para emojis Unicode, usa getEmojiUrl diretamente no emoji
+                        // Para emojis Unicode, usa getEmojiUrl diretamente com o emoji completo
                         url = getEmojiUrlCached(emojiContent);
                         fallbackText = emojiContent;
                         
