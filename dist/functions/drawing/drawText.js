@@ -455,7 +455,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     fallbackText = `:${emojiName}:`;
                 } else {
                     // Emoji Unicode - usa o próprio emoji para getEmojiUrl
-                    url = getEmojiUrlCached(emojiContent);
+                    url = getEmojiUrl(emojiContent);
                     fallbackText = emojiContent;
                 }
 
