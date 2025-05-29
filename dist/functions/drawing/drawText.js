@@ -227,60 +227,66 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         return tokens;
     };
 
-    // Função para processar emojis Unicode
+    // Função para processar emojis Unicode - Versão mais robusta
     const parseUnicodeEmojis = (text) => {
         const tokens = [];
-        let lastIndex = 0;
-        let foundEmojis = [];
         
-        // Coleta informações sobre emojis Unicode
-        twemoji.parse(text, {
-            callback: (icon, options) => {
-                foundEmojis.push({
-                    start: options.startIndex,
-                    end: options.endIndex,
-                    icon: icon,
-                    char: text.slice(options.startIndex, options.endIndex)
+        // Se não há texto, retorna vazio
+        if (!text) return tokens;
+        
+        // Abordagem char-by-char para máxima precisão
+        let i = 0;
+        let currentTextChunk = '';
+        
+        while (i < text.length) {
+            let foundEmoji = false;
+            
+            // Testa diferentes tamanhos de sequência para encontrar emojis
+            // Emojis podem ter 1-14 caracteres (incluindo modificadores e ZWJ)
+            for (let len = Math.min(14, text.length - i); len >= 1; len--) {
+                const substr = text.slice(i, i + len);
+                
+                // Testa se esta substring é um emoji
+                let isEmoji = false;
+                twemoji.parse(substr, {
+                    callback: () => {
+                        isEmoji = true;
+                        return '';
+                    }
                 });
-                return '';
-            }
-        });
-        
-        // Ordena por posição
-        foundEmojis.sort((a, b) => a.start - b.start);
-        
-        // Processa sequencialmente
-        for (const emoji of foundEmojis) {
-            // Adiciona texto antes do emoji
-            if (lastIndex < emoji.start) {
-                const textBefore = text.slice(lastIndex, emoji.start);
-                if (textBefore) {
-                    tokens.push({ type: 'text', content: textBefore });
+                
+                if (isEmoji && len > 1) { 
+                    // Encontrou um emoji válido
+                    
+                    // Adiciona texto acumulado antes
+                    if (currentTextChunk) {
+                        tokens.push({ type: 'text', content: currentTextChunk });
+                        currentTextChunk = '';
+                    }
+                    
+                    // Adiciona o emoji
+                    tokens.push({
+                        type: 'emoji',
+                        content: substr,
+                        isUnicode: true
+                    });
+                    
+                    i += len;
+                    foundEmoji = true;
+                    break;
                 }
             }
             
-            // Adiciona o emoji
-            tokens.push({
-                type: 'emoji',
-                content: emoji.char,
-                isUnicode: true,
-                icon: emoji.icon
-            });
-            
-            lastIndex = emoji.end;
-        }
-        
-        // Adiciona texto restante
-        if (lastIndex < text.length) {
-            const remaining = text.slice(lastIndex);
-            if (remaining) {
-                tokens.push({ type: 'text', content: remaining });
+            if (!foundEmoji) {
+                // Não é emoji, adiciona ao chunk de texto
+                currentTextChunk += text[i];
+                i++;
             }
         }
         
-        // Se não encontrou emojis, retorna como texto simples
-        if (foundEmojis.length === 0 && text) {
-            return [{ type: 'text', content: text }];
+        // Adiciona texto restante
+        if (currentTextChunk) {
+            tokens.push({ type: 'text', content: currentTextChunk });
         }
         
         return tokens;
