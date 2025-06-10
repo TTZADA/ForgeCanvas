@@ -12,38 +12,38 @@ declare const _default: NativeFunction<[{
     required: true;
     rest: false;
 }, {
-    name: number;
-    description: number;
+    name: string;
+    description: string;
     type: ArgType.Number;
     required: true;
     rest: false;
 }, {
-    name: number;
-    description: number;
+    name: string;
+    description: string;
     type: ArgType.Number;
     required: true;
     rest: false;
 }, {
-    name: number;
-    description: number;
+    name: string;
+    description: string;
     type: ArgType.Number;
     required: false;
     rest: false;
 }, {
-    name: number;
-    description: number;
+    name: string;
+    description: string;
     type: ArgType.Number;
     required: false;
     rest: false;
 }, {
-    name: number;
-    description: number;
+    name: string;
+    description: string;
     type: ArgType.Number;
     required: false;
     rest: false;
 }, {
-    name: number;
-    description: number;
+    name: string;
+    description: string;
     type: ArgType.Number;
     required: false;
     rest: true;
