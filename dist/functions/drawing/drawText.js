@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const forgescript_1 = require("@tryforge/forgescript");
 const __1 = require("../..");
-
 const twemoji = require('@twemoji/api');
 
 function getEmojiUrl(text, options = {}) {
@@ -26,7 +25,7 @@ function getEmojiUrl(text, options = {}) {
 exports.default = new forgescript_1.NativeFunction({
     name: '$drawText',
     aliases: ['$placeText', '$text', '$writeText', '$addText'],
-    description: 'Draws a filled/stroked text on a canvas.',
+    description: 'Draws a filled/stroked text on a canvas or GIF frames.',
     version: '1.0.0',
     brackets: true,
     unwrap: true,
@@ -117,25 +116,85 @@ exports.default = new forgescript_1.NativeFunction({
             required: false,
             rest: false
         },
+        {
+            name: 'gif',
+            description: 'Whether to apply to GIF frames (default: false).',
+            type: forgescript_1.ArgType.Boolean,
+            required: false,
+            rest: false
+        }
     ],
-async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWidth, multiline, wrap, lineOffset]) {
+async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWidth, multiline, wrap, lineOffset, gif = false]) {
+    // Se for para GIF, processa todos os frames
+    if (gif) {
+        const encoder = canvasName
+            ? ctx.gifManager?.getEncoder(canvasName)
+            : ctx.gifManager?.lastCurrentEncoder;
+            
+        if (!encoder) return this.customError(__1.FCError.NoEncoder);
+        
+        // Aplica o drawText em todos os frames existentes do encoder
+        const frames = encoder.frames || [];
+        
+        for (let frameIndex = 0; frameIndex < frames.length; frameIndex++) {
+            const frame = frames[frameIndex];
+            
+            // Cria um canvas temporário para este frame
+            const { createCanvas } = require('@napi-rs/canvas');
+            const tempCanvas = createCanvas(frame.width || 800, frame.height || 600);
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Se o frame tem dados de imagem, desenha primeiro
+            if (frame.imageData) {
+                const imageData = tempCtx.createImageData(frame.width, frame.height);
+                imageData.data.set(frame.imageData);
+                tempCtx.putImageData(imageData, 0, 0);
+            }
+            
+            // Aplica as configurações de texto
+            await this.drawTextOnContext(tempCtx, {
+                mode, text, font, style, x, y, emojiSize, 
+                maxWidth, multiline, wrap, lineOffset
+            }, ctx);
+            
+            // Atualiza os dados do frame
+            const newImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            frame.imageData = new Uint8Array(newImageData.data);
+        }
+        
+        return this.success();
+    }
+    
+    // Comportamento original para canvas normal
     const canvas = canvasName
         ? ctx.canvasManager?.get(canvasName)
         : ctx.canvasManager?.lastCurrent;
     if (!canvas) return this.customError(__1.FCError.NoCanvas);
 
+    await this.drawTextOnContext(canvas.ctx, {
+        mode, text, font, style, x, y, emojiSize, 
+        maxWidth, multiline, wrap, lineOffset
+    }, ctx);
+
+    return this.success();
+},
+
+// Método separado para desenhar texto em qualquer contexto
+async drawTextOnContext(canvasCtx, options, ctx) {
+    const { mode, text, font, style, x, y, emojiSize, maxWidth, multiline, wrap, lineOffset } = options;
+    
     // Apply font and style
-    if (font) canvas.ctx.font = font;
+    if (font) canvasCtx.font = font;
     const styleProp = mode === __1.FillOrStroke.fill ? 'fillStyle' : 'strokeStyle';
-    const prevStyle = canvas.ctx[styleProp];
+    const prevStyle = canvasCtx[styleProp];
     const resolved = style
-        ? await __1.CanvasUtil.resolveStyle(this, ctx, canvas, style)
+        ? await __1.CanvasUtil.resolveStyle(this, ctx, { ctx: canvasCtx }, style)
         : null;
     if (resolved instanceof forgescript_1.Return) return resolved;
-    if (resolved) canvas.ctx[styleProp] = resolved;
+    if (resolved) canvasCtx[styleProp] = resolved;
 
     // Determine emoji draw size
-    const size = emojiSize || parseInt(canvas.ctx.font) || 16;
+    const size = emojiSize || parseInt(canvasCtx.font) || 16;
     const actualLineOffset = lineOffset || size * 1.2; // Default line spacing
 
     // Regex para capturar emojis Discord e Unicode
@@ -248,7 +307,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         if (token.type === 'emoji') {
             return size;
         } else {
-            return canvas.ctx.measureText(token.content).width;
+            return canvasCtx.measureText(token.content).width;
         }
     };
 
@@ -391,7 +450,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     
                     for (let i = 0; i < remainingText.length; i++) {
                         const char = remainingText[i];
-                        const charWidth = canvas.ctx.measureText(char).width;
+                        const charWidth = canvasCtx.measureText(char).width;
                         
                         if (testWidth + charWidth <= maxWidth) {
                             canFit += char;
@@ -500,7 +559,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     
                     for (let i = 0; i < remainingText.length; i++) {
                         const char = remainingText[i];
-                        const charWidth = canvas.ctx.measureText(char).width;
+                        const charWidth = canvasCtx.measureText(char).width;
                         
                         if (testWidth + charWidth <= maxWidth) {
                             canFit += char;
@@ -556,7 +615,7 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                     
                     if (emojiData && emojiData.image) {
                         // Desenha a imagem do emoji já carregada
-                        canvas.ctx.drawImage(
+                        canvasCtx.drawImage(
                             emojiData.image,
                             cursorX,
                             lineY - size + (size * 0.2),
@@ -568,29 +627,29 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
                         // Fallback: desenha como texto
                         const fallbackText = emojiData ? emojiData.fallbackText : emojiText;
                         if (mode === __1.FillOrStroke.fill) {
-                            canvas.ctx.fillText(fallbackText, cursorX, lineY);
+                            canvasCtx.fillText(fallbackText, cursorX, lineY);
                         } else {
-                            canvas.ctx.strokeText(fallbackText, cursorX, lineY);
+                            canvasCtx.strokeText(fallbackText, cursorX, lineY);
                         }
-                        cursorX += canvas.ctx.measureText(fallbackText).width;
+                        cursorX += canvasCtx.measureText(fallbackText).width;
                     }
                 } else {
                     // Token de texto normal
                     if (mode === __1.FillOrStroke.fill) {
-                        canvas.ctx.fillText(token.content, cursorX, lineY);
+                        canvasCtx.fillText(token.content, cursorX, lineY);
                     } else {
-                        canvas.ctx.strokeText(token.content, cursorX, lineY);
+                        canvasCtx.strokeText(token.content, cursorX, lineY);
                     }
-                    cursorX += canvas.ctx.measureText(token.content).width;
+                    cursorX += canvasCtx.measureText(token.content).width;
                 }
             }
         } catch (error) {
             console.warn('Error in drawMixedLine:', error);
             // Fallback: desenha a linha inteira como texto
             if (mode === __1.FillOrStroke.fill) {
-                canvas.ctx.fillText(lineText, lineX, lineY);
+                canvasCtx.fillText(lineText, lineX, lineY);
             } else {
-                canvas.ctx.strokeText(lineText, lineX, lineY);
+                canvasCtx.strokeText(lineText, lineX, lineY);
             }
         }
     };
@@ -607,14 +666,13 @@ async execute(ctx, [canvasName, mode, text, font, style, x, y, emojiSize, maxWid
         console.warn('Error drawing lines:', error);
         // Fallback final: desenha o texto original
         if (mode === __1.FillOrStroke.fill) {
-            canvas.ctx.fillText(text, x, y);
+            canvasCtx.fillText(text, x, y);
         } else {
-            canvas.ctx.strokeText(text, x, y);
+            canvasCtx.strokeText(text, x, y);
         }
     }
 
     // Restore style
-    canvas.ctx[styleProp] = prevStyle;
-    return this.success();
+    canvasCtx[styleProp] = prevStyle;
 }
-})
+});
