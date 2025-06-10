@@ -7,7 +7,7 @@ const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const fs = require('fs');
 
 exports.default = new forgescript_1.NativeFunction({
-    name: '$sendGif',
+    name: '$createGifFrames',
     description: 'Loads a GIF file with enhanced frame processing capabilities.',
     version: '1.3.0',
     brackets: true,
