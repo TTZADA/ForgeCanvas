@@ -142,26 +142,65 @@ export default new NativeFunction({
             return width;
         };
 
+        // Split text into tokens (words and emojis)
+        const tokenizeText = (text) => {
+            const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\uFE0F])/gu;
+            const tokens = [];
+            let lastIndex = 0;
+            let match;
+
+            while ((match = regex.exec(text))) {
+                // Add text before emoji as separate tokens (split by spaces)
+                if (match.index > lastIndex) {
+                    const segment = text.slice(lastIndex, match.index);
+                    const words = segment.split(/(\s+)/);
+                    tokens.push(...words.filter(w => w.length > 0));
+                }
+                // Add emoji as a token
+                tokens.push(match[0]);
+                lastIndex = regex.lastIndex;
+            }
+
+            // Add remaining text
+            if (lastIndex < text.length) {
+                const rest = text.slice(lastIndex);
+                const words = rest.split(/(\s+)/);
+                tokens.push(...words.filter(w => w.length > 0));
+            }
+
+            return tokens;
+        };
+
         // Split text into lines if multiline/wrap is enabled
         let lines = [];
         if ((multiline || wrap) && maxWidth) {
-            const words = text.split(' ');
+            const tokens = tokenizeText(text);
             let currentLine = '';
+            let currentWidth = 0;
             
-            for (const word of words) {
-                const testLine = currentLine ? `${currentLine} ${word}` : word;
-                const testWidth = measureMixedText(testLine);
+            for (const token of tokens) {
+                const tokenWidth = measureMixedText(token);
+                const spaceWidth = token.trim() === '' ? 0 : (currentLine && !currentLine.match(/\s$/) ? canvas.ctx.measureText(' ').width : 0);
                 
-                if (testWidth > maxWidth && currentLine) {
-                    lines.push(currentLine);
-                    currentLine = word;
+                // Check if adding this token would exceed maxWidth
+                if (currentWidth + spaceWidth + tokenWidth > maxWidth && currentLine.trim()) {
+                    // Push current line and start new one
+                    lines.push(currentLine.trim());
+                    currentLine = token;
+                    currentWidth = tokenWidth;
                 } else {
-                    currentLine = testLine;
+                    // Add token to current line
+                    if (currentLine && !currentLine.match(/\s$/) && token.trim() !== '' && !token.match(/^\s/)) {
+                        currentLine += ' ';
+                        currentWidth += spaceWidth;
+                    }
+                    currentLine += token;
+                    currentWidth += tokenWidth;
                 }
             }
             
-            if (currentLine) {
-                lines.push(currentLine);
+            if (currentLine.trim()) {
+                lines.push(currentLine.trim());
             }
         } else {
             lines = [text];
