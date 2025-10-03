@@ -142,66 +142,87 @@ export default new NativeFunction({
             return width;
         };
 
-        // Split text into tokens (words and emojis)
-        const tokenizeText = (text) => {
-            const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\uFE0F])/gu;
-            const tokens = [];
-            let lastIndex = 0;
-            let match;
-
-            while ((match = regex.exec(text))) {
-                // Add text before emoji as separate tokens (split by spaces)
-                if (match.index > lastIndex) {
-                    const segment = text.slice(lastIndex, match.index);
-                    const words = segment.split(/(\s+)/);
-                    tokens.push(...words.filter(w => w.length > 0));
-                }
-                // Add emoji as a token
-                tokens.push(match[0]);
-                lastIndex = regex.lastIndex;
-            }
-
-            // Add remaining text
-            if (lastIndex < text.length) {
-                const rest = text.slice(lastIndex);
-                const words = rest.split(/(\s+)/);
-                tokens.push(...words.filter(w => w.length > 0));
-            }
-
-            return tokens;
-        };
-
         // Split text into lines if multiline/wrap is enabled
         let lines = [];
         if ((multiline || wrap) && maxWidth) {
-            const tokens = tokenizeText(text);
+            const tokens = text.split(/(\s+)/).filter(t => t.length > 0);
             let currentLine = '';
             let currentWidth = 0;
-            
-            for (const token of tokens) {
-                const tokenWidth = measureMixedText(token);
-                const spaceWidth = token.trim() === '' ? 0 : (currentLine && !currentLine.match(/\s$/) ? canvas.ctx.measureText(' ').width : 0);
-                
-                // Check if adding this token would exceed maxWidth
-                if (currentWidth + spaceWidth + tokenWidth > maxWidth && currentLine.trim()) {
-                    // Push current line and start new one
-                    lines.push(currentLine.trim());
-                    currentLine = token;
-                    currentWidth = tokenWidth;
+
+            const addToken = (token) => {
+                const testLine = currentLine + token;
+                const testWidth = measureMixedText(testLine);
+                if (testWidth <= maxWidth) {
+                    currentLine = testLine;
+                    currentWidth = testWidth;
                 } else {
-                    // Add token to current line
-                    if (currentLine && !currentLine.match(/\s$/) && token.trim() !== '' && !token.match(/^\s/)) {
-                        currentLine += ' ';
-                        currentWidth += spaceWidth;
+                    if (currentLine) {
+                        lines.push(currentLine);
+                        currentLine = '';
+                        currentWidth = 0;
                     }
-                    currentLine += token;
-                    currentWidth += tokenWidth;
+                    if (token.trim() === '') {
+                        // Skip leading spaces on new line
+                    } else {
+                        hardWrap(token);
+                    }
                 }
-            }
-            
-            if (currentLine.trim()) {
-                lines.push(currentLine.trim());
-            }
+            };
+
+            const hardWrap = (word) => {
+                let remaining = word;
+                while (measureMixedText(remaining) > maxWidth) {
+                    let subLine = '';
+                    let subWidth = 0;
+                    let lastIndex = 0;
+                    const regex = /<a?:(\w+):(\d+)>|([\p{Emoji_Presentation}\uFE0F])/gu;
+                    regex.lastIndex = 0;
+                    let match;
+                    let broke = false;
+                    while ((match = regex.exec(remaining)) && !broke) {
+                        const segment = remaining.slice(lastIndex, match.index);
+                        for (const ch of segment) {
+                            const chWidth = canvas.ctx.measureText(ch).width;
+                            if (subWidth + chWidth > maxWidth) {
+                                broke = true;
+                                break;
+                            }
+                            subLine += ch;
+                            subWidth += chWidth;
+                        }
+                        if (broke) break;
+                        const eWidth = size;
+                        if (subWidth + eWidth > maxWidth) {
+                            broke = true;
+                            break;
+                        }
+                        subLine += match[0];
+                        subWidth += eWidth;
+                        lastIndex = regex.lastIndex;
+                    }
+                    if (!broke) {
+                        const rest = remaining.slice(lastIndex);
+                        for (const ch of rest) {
+                            const chWidth = canvas.ctx.measureText(ch).width;
+                            if (subWidth + chWidth > maxWidth) {
+                                broke = true;
+                                break;
+                            }
+                            subLine += ch;
+                            subWidth += chWidth;
+                        }
+                    }
+                    lines.push(subLine);
+                    remaining = remaining.slice(subLine.length);
+                }
+                if (remaining) {
+                    currentLine = remaining;
+                    currentWidth = measureMixedText(remaining);
+                }
+            };
+
+            tokens.forEach(addToken);
+            if (currentLine) lines.push(currentLine);
         } else {
             lines = [text];
         }
