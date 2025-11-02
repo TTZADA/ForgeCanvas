@@ -103,7 +103,11 @@ export default new NativeFunction({
             ? ctx.canvasManager?.get(canvasName)
             : ctx.canvasManager?.lastCurrent;
         if (!canvas) return this.customError(FCError.NoCanvas);
-
+        
+        const c = (canvasName
+            ? ctx.canvasManager?.get(name)
+            : ctx.canvasManager?.lastCurrent)?.ctx;
+            
         if (font) canvas.ctx.font = font;
         const styleProp = mode === FillOrStroke.fill ? 'fillStyle' : 'strokeStyle';
         const prevStyle = canvas.ctx[styleProp];
@@ -115,8 +119,8 @@ export default new NativeFunction({
 
         const size = emojiSize || parseInt(canvas.font) || 16;
         const actualLineOffset = lineOffset || size * 1.2;
-        const textAlign = canvas.textAlign || 'left';
-        const textBaseline = canvas.textBaseline || 'alphabetic';
+        const textAlign = c.textAlign || 'left';
+        const textBaseline = c.textBaseline || 'alphabetic';
 
         const emojiRegex = /<a?:(\w+):(\d+)>|(\p{Emoji}(?:\u200D\p{Emoji})*(?:\uFE0F)?)/gu;
 
