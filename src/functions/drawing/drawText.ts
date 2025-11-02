@@ -113,10 +113,10 @@ export default new NativeFunction({
         if (resolved instanceof Return) return resolved;
         if (resolved) canvas.ctx[styleProp] = resolved;
 
-        const size = emojiSize || parseInt(canvas.ctx.font) || 16;
+        const size = emojiSize || parseInt(canvas.font) || 16;
         const actualLineOffset = lineOffset || size * 1.2;
-        const textAlign = canvas.ctx.textAlign || 'left';
-        const textBaseline = canvas.ctx.textBaseline || 'alphabetic';
+        const textAlign = canvas.textAlign || 'left';
+        const textBaseline = canvas.textBaseline || 'alphabetic';
 
         const emojiRegex = /<a?:(\w+):(\d+)>|(\p{Emoji}(?:\u200D\p{Emoji})*(?:\uFE0F)?)/gu;
 
