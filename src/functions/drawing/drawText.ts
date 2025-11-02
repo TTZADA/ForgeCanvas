@@ -1,7 +1,8 @@
 import { NativeFunction, ArgType, Return } from '@tryforge/forgescript';
-import { CanvasUtil, FCError, FillOrStroke } from '../..';
+import { CanvasUtil, FCError, FillOrStroke, TextBaseline, TextAlign } from '../..';
 
 const emojiCache = new Map<string, any>();
+const loadingPromises = new Map<string, Promise<any>>();
 
 export default new NativeFunction({
     name: '$drawText',
@@ -114,27 +115,58 @@ export default new NativeFunction({
 
         const size = emojiSize || parseInt(canvas.ctx.font) || 16;
         const actualLineOffset = lineOffset || size * 1.2;
+        
+        const rawAlign = canvas.ctx.textAlign;
+        const textAlign = typeof rawAlign === 'number' 
+            ? TextAlign[rawAlign] 
+            : (rawAlign ?? 'start');
+        
+        const rawBaseline = canvas.ctx.textBaseline;
+        const textBaseline = typeof rawBaseline === 'number' 
+            ? TextBaseline[rawBaseline] 
+            : (rawBaseline ?? 'alphabetic');
 
         const emojiRegex = /<a?:(\w+):(\d+)>|(\p{Emoji}(?:\u200D\p{Emoji})*(?:\uFE0F)?)/gu;
+
+        const metrics = canvas.ctx.measureText('M');
+        const fontAscent = metrics.actualBoundingBoxAscent || size * 0.8;
+        const fontDescent = metrics.actualBoundingBoxDescent || size * 0.2;
+
+        const getBaselineOffsetY = (baseline: string): number => {
+            switch (baseline) {
+                case 'top': 
+                    return fontAscent;
+                case 'hanging': 
+                    return fontAscent * 0.8;
+                case 'middle': 
+                    return (fontAscent - fontDescent) / 2;
+                case 'alphabetic': 
+                    return 0;
+                case 'ideographic': 
+                    return -fontDescent * 0.5;
+                case 'bottom': 
+                    return -fontDescent;
+                default: 
+                    return 0;
+            }
+        };
 
         const measureMixedText = (text: string) => {
             let width = 0;
             let lastIndex = 0;
-            let match;
-            const regex = new RegExp(emojiRegex);
+            const regex = new RegExp(emojiRegex.source, 'gu');
 
-            while ((match = regex.exec(text))) {
-                if (match.index > lastIndex) {
-                    const segment = text.slice(lastIndex, match.index);
-                    width += canvas.ctx.measureText(segment).width;
-                }
+            for (const match of text.matchAll(regex)) {
+                const index = match.index!;
+                const segment = text.slice(lastIndex, index);
+                if (segment) width += canvas.ctx.measureText(segment).width;
                 width += size;
-                lastIndex = regex.lastIndex;
+                lastIndex = index + match[0].length;
             }
 
             if (lastIndex < text.length) {
                 const rest = text.slice(lastIndex);
-                width += canvas.ctx.measureText(rest).width;
+                if (rest) width += canvas.ctx.measureText(rest).width;
             }
 
             return width;
@@ -218,14 +250,27 @@ export default new NativeFunction({
             lines = [text];
         }
 
-        const emojiPromises: Promise<void>[] = [];
+        const uniqueUrls = new Set<string>();
         const emojiData: Array<{ url: string; x: number; y: number }> = [];
+
+        const prevAlign = canvas.ctx.textAlign;
+        canvas.ctx.textAlign = 'left';
 
         for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
             const lineText = lines[lineIndex];
             const lineY = y + (lineIndex * actualLineOffset);
-            let cursorX = x;
+            const lineWidth = measureMixedText(lineText);
+            
+            let startX = x;
+            if (textAlign === 'center') {
+                startX = x - lineWidth / 2;
+            } else if (textAlign === 'right' || textAlign === 'end') {
+                startX = x - lineWidth;
+            } else if (textAlign === 'left' || textAlign === 'start') {
+                startX = x;
+            }
 
+            let cursorX = startX;
             const regex = new RegExp(emojiRegex);
             let lastIndex = 0;
             let match;
@@ -235,17 +280,7 @@ export default new NativeFunction({
                 
                 if (match.index > lastIndex) {
                     const segment = lineText.slice(lastIndex, match.index);
-                    canvas.text(
-                        mode,
-                        segment,
-                        cursorX,
-                        lineY,
-                        font,
-                        maxWidth,
-                        false,
-                        false,
-                        0
-                    );
+                    canvas.text(mode, segment, cursorX, lineY, font, maxWidth, false, false, 0);
                     cursorX += canvas.ctx.measureText(segment).width;
                 }
 
@@ -264,18 +299,15 @@ export default new NativeFunction({
                 }
 
                 if (url) {
-                    emojiData.push({ url, x: cursorX, y: lineY - size });
+                    const baselineOffsetY = getBaselineOffsetY(textBaseline);
+                    const emojiY = lineY - size + baselineOffsetY;
                     
-                    if (!emojiCache.has(url)) {
-                        emojiPromises.push(
-                            CanvasUtil.resolveImage(this, ctx, url).then(img => {
-                                if (!(img instanceof Return)) {
-                                    emojiCache.set(url, img);
-                                }
-                            })
-                        );
-                    }
-                    
+                    emojiData.push({ 
+                        url, 
+                        x: cursorX, 
+                        y: emojiY
+                    });
+                    uniqueUrls.add(url);
                     cursorX += size;
                 }
 
@@ -284,21 +316,33 @@ export default new NativeFunction({
 
             if (lastIndex < lineText.length) {
                 const rest = lineText.slice(lastIndex);
-                canvas.text(
-                    mode,
-                    rest,
-                    cursorX,
-                    lineY,
-                    font,
-                    maxWidth,
-                    false,
-                    false,
-                    0
-                );
+                canvas.text(mode, rest, cursorX, lineY, font, maxWidth, false, false, 0);
             }
         }
 
-        await Promise.all(emojiPromises);
+        canvas.ctx.textAlign = prevAlign;
+
+        const loadPromises: Promise<any>[] = [];
+        for (const url of uniqueUrls) {
+            if (!emojiCache.has(url)) {
+                if (!loadingPromises.has(url)) {
+                    const promise = CanvasUtil.resolveImage(this, ctx, url).then(img => {
+                        if (!(img instanceof Return)) {
+                            emojiCache.set(url, img);
+                        }
+                        loadingPromises.delete(url);
+                        return img;
+                    }).catch(err => {
+                        loadingPromises.delete(url);
+                        return null;
+                    });
+                    loadingPromises.set(url, promise);
+                }
+                loadPromises.push(loadingPromises.get(url)!);
+            }
+        }
+
+        await Promise.all(loadPromises);
 
         for (const { url, x: emojiX, y: emojiY } of emojiData) {
             const img = emojiCache.get(url);
