@@ -266,6 +266,8 @@ export default new NativeFunction({
                 startX = x - lineWidth / 2;
             } else if (textAlign === 'right' || textAlign === 'end') {
                 startX = x - lineWidth;
+            } else if (textAlign === 'left' || textAlign === 'start') {
+                startX = x;
             }
 
             let cursorX = startX;
