@@ -1,5 +1,5 @@
 import { NativeFunction, ArgType, Return } from '@tryforge/forgescript';
-import { CanvasUtil, FCError, FillOrStroke, TextBaseline, TextAlign } from '../..';
+import { CanvasUtil, FCError, FillOrStroke } from '../..';
 
 const emojiCache = new Map<string, any>();
 const loadingPromises = new Map<string, Promise<any>>();
@@ -113,41 +113,22 @@ export default new NativeFunction({
         if (resolved instanceof Return) return resolved;
         if (resolved) canvas.ctx[styleProp] = resolved;
 
-        const size = emojiSize || parseInt(canvas.ctx.font) || 16;
+        const size = emojiSize || parseInt(canvas.font) || 16;
         const actualLineOffset = lineOffset || size * 1.2;
-        
-        const rawAlign = canvas.ctx.textAlign;
-        const textAlign = typeof rawAlign === 'number' 
-            ? TextAlign[rawAlign] 
-            : (rawAlign ?? 'start');
-        
-        const rawBaseline = canvas.ctx.textBaseline;
-        const textBaseline = typeof rawBaseline === 'number' 
-            ? TextBaseline[rawBaseline] 
-            : (rawBaseline ?? 'alphabetic');
+        const textAlign = canvas.textAlign || 'left';
+        const textBaseline = canvas.textBaseline || 'alphabetic';
 
         const emojiRegex = /<a?:(\w+):(\d+)>|(\p{Emoji}(?:\u200D\p{Emoji})*(?:\uFE0F)?)/gu;
 
-        const metrics = canvas.ctx.measureText('M');
-        const fontAscent = metrics.actualBoundingBoxAscent || size * 0.8;
-        const fontDescent = metrics.actualBoundingBoxDescent || size * 0.2;
-
-        const getBaselineOffsetY = (baseline: string): number => {
+        const getBaselineOffset = (baseline: string): number => {
             switch (baseline) {
-                case 'top': 
-                    return fontAscent;
-                case 'hanging': 
-                    return fontAscent * 0.8;
-                case 'middle': 
-                    return (fontAscent - fontDescent) / 2;
-                case 'alphabetic': 
-                    return 0;
-                case 'ideographic': 
-                    return -fontDescent * 0.5;
-                case 'bottom': 
-                    return -fontDescent;
-                default: 
-                    return 0;
+                case 'top': return size;
+                case 'hanging': return size * 0.8;
+                case 'middle': return size * 0.5;
+                case 'alphabetic': return 0;
+                case 'ideographic': return -size * 0.1;
+                case 'bottom': return -size * 0.2;
+                default: return 0;
             }
         };
 
@@ -255,9 +236,6 @@ export default new NativeFunction({
         const uniqueUrls = new Set<string>();
         const emojiData: Array<{ url: string; x: number; y: number }> = [];
 
-        const prevAlign = canvas.ctx.textAlign;
-        canvas.ctx.textAlign = 'left';
-
         for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
             const lineText = lines[lineIndex];
             const lineY = y + (lineIndex * actualLineOffset);
@@ -268,8 +246,6 @@ export default new NativeFunction({
                 startX = x - lineWidth / 2;
             } else if (textAlign === 'right' || textAlign === 'end') {
                 startX = x - lineWidth;
-            } else if (textAlign === 'left' || textAlign === 'start') {
-                startX = x;
             }
 
             let cursorX = startX;
@@ -301,13 +277,11 @@ export default new NativeFunction({
                 }
 
                 if (url) {
-                    const baselineOffsetY = getBaselineOffsetY(textBaseline);
-                    const emojiY = lineY - size + baselineOffsetY;
-                    
+                    const baselineOffset = getBaselineOffset(textBaseline);
                     emojiData.push({ 
                         url, 
                         x: cursorX, 
-                        y: emojiY
+                        y: lineY - size + baselineOffset 
                     });
                     uniqueUrls.add(url);
                     cursorX += size;
@@ -321,8 +295,6 @@ export default new NativeFunction({
                 canvas.text(mode, rest, cursorX, lineY, font, maxWidth, false, false, 0);
             }
         }
-
-        canvas.ctx.textAlign = prevAlign;
 
         const loadPromises: Promise<any>[] = [];
         for (const url of uniqueUrls) {
