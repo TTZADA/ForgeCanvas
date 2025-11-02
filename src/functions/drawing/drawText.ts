@@ -1,5 +1,5 @@
 import { NativeFunction, ArgType, Return } from '@tryforge/forgescript';
-import { CanvasUtil, FCError, FillOrStroke } from '../..';
+import { CanvasUtil, FCError, FillOrStroke, TextBaseline, TextAlign } from '../..';
 
 const emojiCache = new Map<string, any>();
 const loadingPromises = new Map<string, Promise<any>>();
@@ -103,11 +103,7 @@ export default new NativeFunction({
             ? ctx.canvasManager?.get(canvasName)
             : ctx.canvasManager?.lastCurrent;
         if (!canvas) return this.customError(FCError.NoCanvas);
-        
-        const c = (canvasName
-            ? ctx.canvasManager?.get(name)
-            : ctx.canvasManager?.lastCurrent)?.ctx;
-            
+
         if (font) canvas.ctx.font = font;
         const styleProp = mode === FillOrStroke.fill ? 'fillStyle' : 'strokeStyle';
         const prevStyle = canvas.ctx[styleProp];
@@ -117,10 +113,18 @@ export default new NativeFunction({
         if (resolved instanceof Return) return resolved;
         if (resolved) canvas.ctx[styleProp] = resolved;
 
-        const size = emojiSize || parseInt(canvas.font) || 16;
+        const size = emojiSize || parseInt(canvas.ctx.font) || 16;
         const actualLineOffset = lineOffset || size * 1.2;
-        const textAlign = c.textAlign || 'left';
-        const textBaseline = c.textBaseline || 'alphabetic';
+        
+        const rawAlign = canvas.ctx.textAlign;
+        const textAlign = typeof rawAlign === 'number' 
+            ? TextAlign[rawAlign] 
+            : (rawAlign ?? 'start');
+        
+        const rawBaseline = canvas.ctx.textBaseline;
+        const textBaseline = typeof rawBaseline === 'number' 
+            ? TextBaseline[rawBaseline] 
+            : (rawBaseline ?? 'alphabetic');
 
         const emojiRegex = /<a?:(\w+):(\d+)>|(\p{Emoji}(?:\u200D\p{Emoji})*(?:\uFE0F)?)/gu;
 
