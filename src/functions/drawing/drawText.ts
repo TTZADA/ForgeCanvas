@@ -254,7 +254,7 @@ export default new NativeFunction({
         const emojiData: Array<{ url: string; x: number; y: number }> = [];
 
         const prevAlign = canvas.ctx.textAlign;
-        canvas.ctx.textAlign = 'left';
+        canvas.ctx.textAlign = 'start';
 
         for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
             const lineText = lines[lineIndex];
