@@ -128,15 +128,27 @@ export default new NativeFunction({
 
         const emojiRegex = /<a?:(\w+):(\d+)>|(\p{Emoji}(?:\u200D\p{Emoji})*(?:\uFE0F)?)/gu;
 
-        const getBaselineOffset = (baseline: string): number => {
+        const metrics = canvas.ctx.measureText('M');
+        const fontAscent = metrics.actualBoundingBoxAscent || size * 0.8;
+        const fontDescent = metrics.actualBoundingBoxDescent || size * 0.2;
+        const fontHeight = fontAscent + fontDescent;
+
+        const getBaselineOffsetY = (baseline: string): number => {
             switch (baseline) {
-                case 'top': return size;
-                case 'hanging': return size * 0.8;
-                case 'middle': return size * 0.5;
-                case 'alphabetic': return 0;
-                case 'ideographic': return -size * 0.1;
-                case 'bottom': return -size * 0.2;
-                default: return 0;
+                case 'top': 
+                    return fontAscent;
+                case 'hanging': 
+                    return fontAscent * 0.8;
+                case 'middle': 
+                    return (fontAscent - fontDescent) / 2;
+                case 'alphabetic': 
+                    return 0;
+                case 'ideographic': 
+                    return -fontDescent * 0.5;
+                case 'bottom': 
+                    return -fontDescent;
+                default: 
+                    return 0;
             }
         };
 
@@ -285,11 +297,13 @@ export default new NativeFunction({
                 }
 
                 if (url) {
-                    const baselineOffset = getBaselineOffset(textBaseline);
+                    const baselineOffsetY = getBaselineOffsetY(textBaseline);
+                    const emojiY = lineY - size + baselineOffsetY;
+                    
                     emojiData.push({ 
                         url, 
                         x: cursorX, 
-                        y: lineY - size + baselineOffset 
+                        y: emojiY
                     });
                     uniqueUrls.add(url);
                     cursorX += size;
