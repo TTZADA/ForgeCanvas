@@ -131,7 +131,6 @@ export default new NativeFunction({
         const metrics = canvas.ctx.measureText('M');
         const fontAscent = metrics.actualBoundingBoxAscent || size * 0.8;
         const fontDescent = metrics.actualBoundingBoxDescent || size * 0.2;
-        const fontHeight = fontAscent + fontDescent;
 
         const getBaselineOffsetY = (baseline: string): number => {
             switch (baseline) {
@@ -256,6 +255,9 @@ export default new NativeFunction({
         const uniqueUrls = new Set<string>();
         const emojiData: Array<{ url: string; x: number; y: number }> = [];
 
+        const prevAlign = canvas.ctx.textAlign;
+        canvas.ctx.textAlign = 'left';
+
         for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
             const lineText = lines[lineIndex];
             const lineY = y + (lineIndex * actualLineOffset);
@@ -319,6 +321,8 @@ export default new NativeFunction({
                 canvas.text(mode, rest, cursorX, lineY, font, maxWidth, false, false, 0);
             }
         }
+
+        canvas.ctx.textAlign = prevAlign;
 
         const loadPromises: Promise<any>[] = [];
         for (const url of uniqueUrls) {
